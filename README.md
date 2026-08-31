@@ -24,11 +24,11 @@ pipx install .
 ## Запуск сервера
 
 ```powershell
-z:\llamacpp\cuda\llama-server.exe `
-  -m d:\models\llama\qwen\Qwen3.5-9B-UD-Q4_K_XL.gguf `
+llama-server.exe `
+  -m Qwen3.5-9B-UD-Q4_K_XL.gguf `
   --no-mmproj `
   --jinja `
-  --chat-template-file "d:\models\llama\qwen\chat_template.jinja" `
+  --chat-template-file "chat_template.jinja" `
   --tools all `
   -c 65536 `
   -fa on `
