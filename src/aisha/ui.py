@@ -62,7 +62,7 @@ class AishaUI:
 
     def print_welcome(self) -> None:
         """Print welcome message."""
-        self.console.print("[bold]aisha[/bold] — local AI agent")
+        self.console.print("[bold]aisha[/bold] — local AI agent. By Cruide (https://github.com/cruide)")
         self.console.print("Type your message or /help for commands.")
 
     def print_help(self) -> None:
@@ -157,9 +157,10 @@ class AishaUI:
 
     def print_token_status(self, status: str) -> None:
         """Print token status line."""
-        self.console.print(f"[status.line]{'─' * 60}[/status.line]")
+        self.console.print(f"[status.line]{'─' * 80}[/status.line]")
         self.console.print(f"[status.line]{status}[/status.line]")
-        self.console.print("[status.line]© Tischenko Alexander[/status.line]")
+        # self.console.print("[status.line]© Tischenko Alexander[/status.line]")
+        self.console.print(f"[status.line]{'─' * 80}[/status.line]")
 
     async def ask_confirmation(
         self,
