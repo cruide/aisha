@@ -98,6 +98,13 @@ class Tool(ABC):
         """Validate and normalize arguments. Raises ToolValidationError on failure."""
         return args
 
+    def format_args(self, args: dict) -> str:
+        """Return a short human-readable summary of the arguments for the UI."""
+        for key in ("query", "url", "pattern", "command", "question", "path", "label", "name"):
+            if key in args and args[key] is not None:
+                return str(args[key])
+        return ""
+
     @abstractmethod
     async def execute(self, args: dict, context: dict) -> ToolResult:
         """Execute the tool with given arguments and context.

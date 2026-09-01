@@ -35,6 +35,12 @@ PARALLEL_TOOLS = frozenset({
     "memory_get",
 })
 
+# Tools whose status is not shown in the UI (only on error)
+HIDDEN_TOOLS = frozenset({
+    "memory_set",
+    "memory_get",
+})
+
 
 class AgentLoop:
     """Main agent loop handling model calls and tool execution."""
@@ -46,7 +52,7 @@ class AgentLoop:
         context: ContextManager,
         registry: ToolRegistry,
         ui_callback: Callable[[str, Any], Awaitable[None]] | None = None,
-        tool_status_fn: Callable[[str, str, str], None] | None = None,
+        tool_status_fn: Callable[[str, str, str, str], None] | None = None,
         ask_fn: Callable[[str, list[str] | None], Awaitable[str | None]] | None = None,
         confirm_fn: Callable[..., Awaitable[str | None]] | None = None,
         thinking_callback: Callable[[str], None] | None = None,
@@ -270,8 +276,9 @@ class AgentLoop:
         self, call_id: str, tool: Tool, args: dict
     ) -> str:
         """Execute a single tool call."""
-        if self.tool_status_fn:
-            self.tool_status_fn(tool.name, "running", call_id)
+        summary = tool.format_args(args)
+        if self.tool_status_fn and tool.name not in HIDDEN_TOOLS:
+            self.tool_status_fn(tool.name, "running", call_id, summary)
 
         start = time.monotonic()
 
@@ -301,8 +308,10 @@ class AgentLoop:
         result.meta.setdefault("duration_ms", duration_ms)
 
         status = "success" if result.ok else "error"
-        if self.tool_status_fn:
-            self.tool_status_fn(tool.name, status, call_id)
+        if self.tool_status_fn and (
+            tool.name not in HIDDEN_TOOLS or status == "error"
+        ):
+            self.tool_status_fn(tool.name, status, call_id, summary)
 
         return result.to_json()
 

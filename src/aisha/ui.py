@@ -28,6 +28,16 @@ _theme = Theme(
 )
 
 
+def _truncate_detail(detail: str, max_chars: int = 120) -> str:
+    """Collapse whitespace and truncate a tool detail line for display."""
+    if not detail:
+        return ""
+    text = " ".join(detail.split())
+    if len(text) <= max_chars:
+        return text
+    return text[: max_chars - 1].rstrip() + "…"
+
+
 class AishaUI:
     """Terminal UI using rich + prompt_toolkit."""
 
@@ -113,7 +123,9 @@ class AishaUI:
         if text:
             self.console.print(Text(text, style="dim italic"))
 
-    def print_tool_status(self, name: str, status: str, call_id: str = "") -> None:
+    def print_tool_status(
+        self, name: str, status: str, call_id: str = "", detail: str = ""
+    ) -> None:
         """Print tool execution status."""
         icons = {
             "running": "[tool.running]⟳[/tool.running]",
@@ -122,7 +134,11 @@ class AishaUI:
             "warning": "[tool.warning]⚠[/tool.warning]",
         }
         icon = icons.get(status, "?")
-        self.console.print(f"  {icon} {name}")
+        detail_text = _truncate_detail(detail)
+        if detail_text:
+            self.console.print(f"  {icon} [bold]{name}[/bold] [dim]{detail_text}[/dim]")
+        else:
+            self.console.print(f"  {icon} {name}")
 
     def print_error(self, message: str) -> None:
         """Print error message."""

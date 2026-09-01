@@ -59,6 +59,10 @@ class TodoWriteTool(Tool):
                 raise ToolValidationError(f"Invalid status: {item.get('status')}")
         return args
 
+    def format_args(self, args: dict) -> str:
+        items = args.get("items", [])
+        return f"{len(items)} задач"
+
     async def execute(self, args: dict, context: dict) -> ToolResult:
         self.items = [TodoItem(i["text"], i["status"]) for i in args["items"]]
         return ToolResult.success(

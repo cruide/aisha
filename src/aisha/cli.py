@@ -214,8 +214,8 @@ async def run_repl(config: Config, workspace: Path, args: argparse.Namespace) ->
         ),
     )
 
-    def tool_status(name: str, status: str, call_id: str) -> None:
-        ui.print_tool_status(name, status, call_id)
+    def tool_status(name: str, status: str, call_id: str, detail: str) -> None:
+        ui.print_tool_status(name, status, call_id, detail)
 
     agent.tool_status_fn = tool_status
 
