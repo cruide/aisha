@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+__author__ = "Tischenko Alexander"
+
 import json
 import os
 import re

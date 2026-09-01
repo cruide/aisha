@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+__author__ = "Tischenko Alexander"
+
 import argparse
 import asyncio
 import logging

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+__author__ = "Tischenko Alexander"
+
 import asyncio
 import os
 from typing import Any
@@ -157,6 +159,7 @@ class AishaUI:
         """Print token status line."""
         self.console.print(f"[status.line]{'─' * 60}[/status.line]")
         self.console.print(f"[status.line]{status}[/status.line]")
+        self.console.print("[status.line]© Tischenko Alexander[/status.line]")
 
     async def ask_confirmation(
         self,

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+__author__ = "Tischenko Alexander"
+
 import logging
 import platform
 from pathlib import Path

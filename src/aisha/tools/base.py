@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+__author__ = "Tischenko Alexander"
+
 import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field

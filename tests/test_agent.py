@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+__author__ = "Tischenko Alexander"
+
 from pathlib import Path
 
 from aisha.agent import PARALLEL_TOOLS
