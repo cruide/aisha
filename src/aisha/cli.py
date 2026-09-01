@@ -42,6 +42,16 @@ from aisha.tools.shell import RunCommandTool
 from aisha.tools.web import WebFetchTool, WebSearchTool
 from aisha.ui import AishaUI
 
+INIT_PROMPT = (
+    "Изучи внимательно данный проект и опиши как можно подробнее его архитектуру, "
+    "структуру, идею и особенности в файл AGENTS.md. Проанализируй структуру "
+    "каталогов, ключевые файлы, точку входа, используемые технологии и зависимости, "
+    "принятые конвенции кода, конфигурацию, сборку и запуск. Итоговый AGENTS.md "
+    "должен быть подробным руководством, которое позволит другому агенту быстро "
+    "разобраться в проекте и эффективно в нём работать. Сохрани результат в файл "
+    "AGENTS.md в корне проекта."
+)
+
 
 def format_context_size(n_ctx: int | None) -> str:
     """Format a context size as a human-readable string (e.g. 8192 -> '8K')."""
@@ -287,6 +297,18 @@ async def run_repl(config: Config, workspace: Path, args: argparse.Namespace) ->
                         await run_doctor(client)
                     elif cmd == "/clear":
                         ui.clear_screen()
+                    elif cmd == "/init":
+                        ui.print_info("Изучаю проект и создаю AGENTS.md ...")
+
+                        async def on_stream(type_: str, text: str) -> None:
+                            if type_ == "text":
+                                ui.print_assistant_text(text)
+
+                        ui.print_assistant_start()
+                        agent.ui_callback = on_stream
+                        await agent.run(INIT_PROMPT)
+                        ui.flush_assistant()
+                        ui.print_token_status(context.format_token_status())
                     else:
                         ui.print_warning(f"Unknown command: {cmd}")
                     continue

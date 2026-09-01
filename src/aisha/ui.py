@@ -75,6 +75,7 @@ class AishaUI:
             "/memory  — list memory blocks\n"
             "/compact — force compact history\n"
             "/doctor  — check server connection\n"
+            "/init    — study project and create AGENTS.md\n"
             "/clear   — clear screen\n"
             "/quit    — exit\n"
             "/exit    — exit"

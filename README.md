@@ -151,6 +151,7 @@ show_reasoning = false
 | `/memory` | блоки памяти |
 | `/compact` | сжать историю |
 | `/doctor` | проверить соединение |
+| `/init` | изучить проект и создать AGENTS.md |
 | `/clear` | очистить экран |
 | `/quit`, `/exit` | выход |
 
