@@ -45,6 +45,53 @@ ask_user, а не гадай.
 {skills_section}
 """
 
+TOOL_GUIDE_INTRO = """\
+## Справочник инструментов
+Вызывай инструменты ТОЛЬКО через native tool calling, передавая ВСЕ обязательные аргументы как \
+JSON-объект. Вызов с пропущенным обязательным аргументом будет отклонён.
+
+### Правила вызова
+- Всегда указывай имя инструмента и корректный JSON аргументов. Не выдумывай результаты — \
+дождись реального ответа инструмента.
+- Перед изменением файла сначала прочитай его через read_file; фрагмент для замены копируй \
+дословно (с отступами и переносами строк), не пересказывай по памяти.
+- Пути указывай относительно workspace. Каждому инструменту передавай ровно те аргументы, \
+что описаны в его схеме, с правильными типами (строки — в кавычках, числа — без кавычек).
+- Одна операция — один вызов. Независимые read-only вызовы (read_file, list_dir, glob, grep, \
+web_search, web_fetch) можно делать параллельно.
+- Если инструмент вернул ok=false, прочитай поле error и исправь аргументы; не повторяй тот же \
+вызов без изменений.
+
+### Типичные операции
+- Найти файл по имени: glob(pattern="**/*.py")
+- Найти строку в коде: grep(pattern="def foo", include="*.py", path="src")
+- Заменить фрагмент: сначала read_file, затем edit_file(path="src/app.py", \
+old_text=<точный фрагмент из файла>, new_text=<новый текст>)
+- Выполнить команду: run_command(command="pytest")
+- Поиск в интернете: web_search(query="..."), затем web_fetch(url="...") при необходимости
+- План многошаговой задачи: todowrite(items=[{text: "...", status: "in_progress"}])
+"""
+
+
+def build_tool_guide(tools: list[dict[str, Any]]) -> str:
+    """Format a compact per-tool reference (name, description, arguments) for weak models."""
+    lines = [TOOL_GUIDE_INTRO, "", "### Доступные инструменты"]
+    for spec in tools:
+        fn = spec.get("function", {})
+        params = fn.get("parameters", {}) or {}
+        props = params.get("properties", {}) or {}
+        required = set(params.get("required", []) or [])
+        args: list[str] = []
+        for name, prop in props.items():
+            mark = "*" if name in required else ""
+            desc = prop.get("description", "")
+            args.append(f"{name}{mark}" + (f" — {desc}" if desc else ""))
+        lines.append(f"- **{fn.get('name', '?')}**: {fn.get('description', '')}")
+        if args:
+            lines.append("  - аргументы: " + "; ".join(args))
+    return "\n".join(lines)
+
+
 
 @dataclass(slots=True)
 class TokenStats:
@@ -77,10 +124,12 @@ class TokenStats:
 
 
 class ConversationContext:
-    def __init__(self, config: Config, memory: MemoryStore | None, skills: SkillIndex) -> None:
+    def __init__(self, config: Config, memory: MemoryStore | None, skills: SkillIndex,
+                 tool_guide: str = "") -> None:
         self.config = config
         self.memory = memory
         self.skills = skills
+        self.tool_guide = tool_guide
         self.messages: list[dict[str, Any]] = []
         self._messages_chars = 0
         self._system_prompt: str | None = None
@@ -155,6 +204,8 @@ class ConversationContext:
             memory_section=memory_section,
             skills_section=skills_section,
         )
+        if self.tool_guide:
+            prompt += f"\n{self.tool_guide}\n"
         if self.agents_md:
             note = " (файл обрезан до 64 КБ)" if self.agents_md_truncated else ""
             prompt += f"\n## Инструкции проекта (AGENTS.md){note}\n{self.agents_md}\n"

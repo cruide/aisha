@@ -65,7 +65,11 @@ def html_to_text(html: str) -> tuple[str, str]:
 class WebSearchTool(Tool):
     name = "web_search"
     read_only = True
-    description = "Поиск в интернете (DuckDuckGo). Возвращает заголовки, URL и сниппеты."
+    description = (
+        "Поиск в интернете (DuckDuckGo). Обязательный аргумент: query — поисковый запрос. "
+        "Необязательный: max_results (количество результатов). Возвращает заголовки, URL и "
+        "сниппеты. Пример: web_search(query=\"как настроить llama.cpp\")."
+    )
     parameters = {
         "type": "object",
         "properties": {
@@ -103,7 +107,11 @@ class WebSearchTool(Tool):
 class WebFetchTool(Tool):
     name = "web_fetch"
     read_only = True
-    description = "Загрузить веб-страницу по URL и вернуть извлечённый текст."
+    description = (
+        "Загрузить веб-страницу по URL и вернуть извлечённый текст. Обязательный аргумент: url — "
+        "полный адрес с http/https. Необязательный: max_chars (лимит символов текста). "
+        "Пример: web_fetch(url=\"https://example.com/docs\")."
+    )
     parameters = {
         "type": "object",
         "properties": {

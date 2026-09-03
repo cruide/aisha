@@ -13,7 +13,7 @@ from aisha import __version__
 from aisha.agent import AgentLoop
 from aisha.client import LlamaClient
 from aisha.config import Config, load_config
-from aisha.context import ConversationContext
+from aisha.context import ConversationContext, build_tool_guide
 from aisha.errors import AishaError, ConfigurationError
 from aisha.memory import MemoryStore
 from aisha.skills import SkillIndex
@@ -181,11 +181,11 @@ async def _amain(args: argparse.Namespace) -> int:
             ui.info("Подсказка: aisha --doctor покажет подробности; сервер должен слушать "
                     f"{config.server.base_url}.")
             return 1
-        
+
         # if not matched:
         #     ui.warn(f"Модель '{config.server.model}' не найдена на сервере, "
         #             f"используется '{model}'.")
-        
+
         if n_ctx:
             config.llm.context_window = n_ctx
 
@@ -193,7 +193,9 @@ async def _amain(args: argparse.Namespace) -> int:
                               max_block_chars=config.memory.max_block_chars)
                   if config.memory.enabled else None)
         skills = SkillIndex(config.home_dir / "skills", config.project_dir / "skills")
-        context = ConversationContext(config, memory, skills)
+        tool_guide = (build_tool_guide(registry.schemas(read_only=config.read_only))
+                      if config.llm.tool_guide else "")
+        context = ConversationContext(config, memory, skills, tool_guide)
         ui.attach(config, context, client)
         tool_ctx = ToolContext(
             workspace=workspace, config=config, memory=memory, skills=skills,

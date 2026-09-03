@@ -66,3 +66,21 @@ def test_sources_are_unique(tmp_path: Path, monkeypatch):
                       cli={"llm": {"temperature": 0.1}})
     assert len(cfg.sources) == len(set(cfg.sources))
 
+
+def test_tool_guide_flag(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    assert load_config(ws, env={}).llm.tool_guide is False
+    (ws / "aisha.toml").write_text("[llm]\ntool_guide = true\n")
+    assert load_config(ws, env={}).llm.tool_guide is True
+
+
+def test_tool_guide_must_be_bool(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    (ws / "aisha.toml").write_text('[llm]\ntool_guide = "yes"\n')
+    with pytest.raises(ConfigurationError, match="tool_guide"):
+        load_config(ws, env={})
+

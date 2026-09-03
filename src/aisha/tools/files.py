@@ -77,8 +77,10 @@ class ReadFileTool(Tool):
     name = "read_file"
     read_only = True
     description = (
-        "Прочитать текстовый файл (UTF-8). offset — номер первой строки (с 0), "
-        "limit — сколько строк вернуть (по умолчанию 500)."
+        "Прочитать текстовый файл (UTF-8). Обязательный аргумент: path — путь к файлу "
+        "относительно workspace. Необязательные: offset (номер первой строки, с 0) и limit "
+        "(сколько строк вернуть, по умолчанию 500). Перед любой правкой файла сначала прочитай "
+        "его этим инструментом. Пример: read_file(path=\"src/main.py\", offset=0, limit=100)."
     )
     parameters = {
         "type": "object",
@@ -116,7 +118,13 @@ class ReadFileTool(Tool):
 
 class WriteFileTool(Tool):
     name = "write_file"
-    description = "Создать файл или полностью перезаписать его содержимое (атомарно)."
+    description = (
+        "Создать новый файл или полностью перезаписать существующий (атомарно). Обязательные "
+        "аргументы: path (путь к файлу) и content (полное содержимое файла одной строкой). "
+        "Необязательный: create_dirs=true создаёт родительские каталоги. Для новых файлов "
+        "используй write_file, для точечных правок существующих — edit_file. "
+        "Пример: write_file(path=\"notes.txt\", content=\"Привет\\n\")."
+    )
     parameters = {
         "type": "object",
         "properties": {
@@ -152,16 +160,24 @@ class WriteFileTool(Tool):
 class EditFileTool(Tool):
     name = "edit_file"
     description = (
-        "Точная замена фрагмента текста в файле. old_text должен встречаться ровно "
-        "expected_replacements раз (по умолчанию 1), иначе файл не изменяется."
+        "Точечная замена фрагмента текста в существующем файле. Обязательные аргументы: "
+        "path (путь к файлу), old_text (точный заменяемый фрагмент, скопированный дословно "
+        "из read_file вместе с отступами и переносами строк) и new_text (новый текст вместо "
+        "old_text). old_text должен встречаться ровно expected_replacements раз (по умолчанию "
+        "1), иначе файл не изменится. Сначала прочитай файл через read_file, затем скопируй "
+        "точный фрагмент в old_text. Пример: edit_file(path=\"src/app.py\", "
+        "old_text=\"return 1\", new_text=\"return 2\")."
     )
     parameters = {
         "type": "object",
         "properties": {
-            "path": {"type": "string"},
-            "old_text": {"type": "string"},
-            "new_text": {"type": "string"},
-            "expected_replacements": {"type": "integer"},
+            "path": {"type": "string", "description": "Путь к файлу (относительно workspace)"},
+            "old_text": {"type": "string",
+                         "description": "Точный заменяемый фрагмент (дословная копия из файла)"},
+            "new_text": {"type": "string",
+                         "description": "Новый текст, который заменит old_text"},
+            "expected_replacements": {"type": "integer",
+                                      "description": "Сколько раз должен встретиться old_text"},
         },
         "required": ["path", "old_text", "new_text"],
     }
@@ -195,7 +211,11 @@ class EditFileTool(Tool):
 class ListDirTool(Tool):
     name = "list_dir"
     read_only = True
-    description = "Показать содержимое каталога (имена, тип, размер)."
+    description = (
+        "Показать содержимое каталога (имена, тип, размер). Необязательный аргумент path "
+        "(каталог, по умолчанию '.'). show_hidden=true покажет скрытые файлы; limit — максимум "
+        "записей. Пример: list_dir(path=\"src\")."
+    )
     parameters = {
         "type": "object",
         "properties": {
@@ -235,7 +255,11 @@ class ListDirTool(Tool):
 class GlobTool(Tool):
     name = "glob"
     read_only = True
-    description = "Найти файлы по маске, например '**/*.py' или 'src/**/*Controller.php'."
+    description = (
+        "Найти файлы по маске имён. Обязательный аргумент: pattern, например '**/*.py' или "
+        "'src/**/*.php'. Необязательный: path — база поиска (по умолчанию '.'). Возвращает список "
+        "путей к файлам. Пример: glob(pattern=\"src/**/*.py\")."
+    )
     parameters = {
         "type": "object",
         "properties": {
@@ -275,7 +299,11 @@ class GrepTool(Tool):
     name = "grep"
     read_only = True
     description = (
-        "Regex-поиск по содержимому файлов. include — маска имён файлов, например '*.php'."
+        "Regex-поиск по содержимому файлов. Обязательный аргумент: pattern (регулярное "
+        "выражение Python re). Необязательные: path (файл или каталог, по умолчанию '.'), "
+        "include (маска имён файлов, например '*.py'), ignore_case=true. Возвращает файл, "
+        "номер строки и текст совпадения. Пример: grep(pattern=\"def foo\", include=\"*.py\", "
+        "path=\"src\")."
     )
     parameters = {
         "type": "object",

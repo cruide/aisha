@@ -7,9 +7,10 @@ import aisha.agent as agent_mod
 from aisha.agent import AgentLoop
 from aisha.client import ChatResponse, ToolCall
 from aisha.config import load_config
-from aisha.context import ConversationContext
+from aisha.context import ConversationContext, build_tool_guide
 from aisha.skills import SkillIndex
 from aisha.tools.base import Tool, ToolContext, ToolRegistry, ToolResult
+from aisha.tools.files import EditFileTool, ReadFileTool
 
 
 @pytest.fixture
@@ -159,3 +160,20 @@ def test_close_dangling_tool_calls(config, skills, workspace):
     context.close_dangling_tool_calls("отменено")
     tools = [m for m in context.messages if m.get("role") == "tool"]
     assert len(tools) == 1 and tools[0]["tool_call_id"] == "c1"
+
+
+def test_tool_guide_off_by_default(config, skills, workspace):
+    context = ConversationContext(config, None, skills)
+    assert "Справочник инструментов" not in context.system_prompt()
+
+
+def test_tool_guide_injected_when_enabled(config, skills, workspace):
+    registry = ToolRegistry()
+    registry.register(ReadFileTool())
+    registry.register(EditFileTool())
+    guide = build_tool_guide(registry.schemas())
+    context = ConversationContext(config, None, skills, tool_guide=guide)
+    prompt = context.system_prompt()
+    assert "Справочник инструментов" in prompt
+    assert "read_file" in prompt and "edit_file" in prompt
+    assert "old_text" in prompt

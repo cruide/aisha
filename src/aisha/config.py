@@ -28,6 +28,7 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "context_window": 32768,
         "context_soft_limit": 0.85,
         "max_tool_iterations": 25,
+        "tool_guide": False,
     },
     "tools": {
         "shell": True,
@@ -80,6 +81,7 @@ class LLMConfig:
     context_window: int
     context_soft_limit: float
     max_tool_iterations: int
+    tool_guide: bool
 
 
 @dataclass(slots=True)
@@ -235,6 +237,7 @@ def _validate(data: dict[str, Any], source: str) -> None:
         ("tools", "allow_read_outside_workspace"), ("tools", "allow_write_outside_workspace"),
         ("web", "allow_private_hosts"), ("memory", "enabled"),
         ("ui", "stream"), ("ui", "show_reasoning"),
+        ("llm", "tool_guide"),
     )
     for section, key in bool_keys:
         if not isinstance(data[section][key], bool):

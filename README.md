@@ -101,6 +101,7 @@ max_output_tokens = 8192
 context_window = 32768
 context_soft_limit = 0.85
 max_tool_iterations = 25
+tool_guide = false           # true — добавить «Справочник инструментов» в системный промпт (для слабых моделей)
 
 [tools]
 shell = true

@@ -116,8 +116,11 @@ async def run_process(argv: list[str], cwd: str, timeout: float) -> tuple[int, b
 class RunCommandTool(Tool):
     name = "run_command"
     description = (
-        "Выполнить команду в PowerShell или cmd в рабочей директории. Возвращает stdout, "
-        "stderr и exit code. Не запускай интерактивные программы."
+        "Выполнить команду в PowerShell или cmd в рабочей директории. Обязательный аргумент: "
+        "command — сама команда одной строкой. Необязательные: shell (powershell|cmd, по умолчанию "
+        "из настроек), cwd (рабочая директория), timeout_seconds. Возвращает stdout, stderr и "
+        "exit_code. Не запускай интерактивные программы (например, python без аргументов или "
+        "интерактивный редактор). Пример: run_command(command=\"pytest\")."
     )
     parameters = {
         "type": "object",

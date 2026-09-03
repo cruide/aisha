@@ -14,7 +14,11 @@ TODO_STATUSES = ("pending", "in_progress", "done", "cancelled")
 class TodoWriteTool(Tool):
     name = "todowrite"
     read_only = True
-    description = "Обновить список задач текущей сессии (полная замена списка)."
+    description = (
+        "Обновить список задач текущей сессии (полная замена списка). Обязательный аргумент: "
+        "items — массив объектов вида {text: строка, status: pending|in_progress|done|cancelled}. "
+        "Пример: todowrite(items=[{text: 'написать тест', status: 'pending'}])."
+    )
     parameters = {
         "type": "object",
         "properties": {
@@ -52,7 +56,11 @@ class TodoWriteTool(Tool):
 class AskUserTool(Tool):
     name = "ask_user"
     read_only = True
-    description = "Задать пользователю уточняющий вопрос и дождаться ответа."
+    description = (
+        "Задать пользователю уточняющий вопрос и дождаться ответа. Обязательный аргумент: "
+        "question — текст вопроса. Необязательные: options (список вариантов) и allow_free_text. "
+        "Используй, когда задача неоднозначна, вместо того чтобы гадать."
+    )
     parameters = {
         "type": "object",
         "properties": {
@@ -80,7 +88,7 @@ def _store(ctx: ToolContext):
 class MemoryListTool(Tool):
     name = "memory_list"
     read_only = True
-    description = "Список блоков постоянной памяти с описаниями."
+    description = "Список блоков постоянной памяти с описаниями. Аргументы не требуются."
     parameters = {"type": "object", "properties": {}}
 
     async def run(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
@@ -94,7 +102,7 @@ class MemoryListTool(Tool):
 class MemoryGetTool(Tool):
     name = "memory_get"
     read_only = True
-    description = "Прочитать содержимое блока памяти."
+    description = "Прочитать содержимое блока памяти. Обязательный аргумент: label — имя блока."
     parameters = {"type": "object", "properties": {"label": {"type": "string"}},
                   "required": ["label"]}
 
@@ -112,8 +120,10 @@ class MemoryGetTool(Tool):
 class MemorySetTool(Tool):
     name = "memory_set"
     description = (
-        "Создать или полностью перезаписать блок памяти. scope: global (предпочтения "
-        "пользователя) или project (правила текущего проекта). Не сохраняй секреты."
+        "Создать или полностью перезаписать блок памяти. Обязательные аргументы: label (имя), "
+        "description (краткое назначение) и value (содержимое). scope: global (предпочтения "
+        "пользователя) или project (правила текущего проекта). Сохраняй только устойчивые факты, "
+        "не сохраняй секреты."
     )
     parameters = {
         "type": "object",
@@ -137,7 +147,10 @@ class MemorySetTool(Tool):
 
 class MemoryReplaceTool(Tool):
     name = "memory_replace"
-    description = "Точная замена текста внутри блока памяти."
+    description = (
+        "Точная замена текста внутри блока памяти. Обязательные аргументы: label (имя блока), "
+        "old_text (точный заменяемый фрагмент) и new_text (новый текст)."
+    )
     parameters = {
         "type": "object",
         "properties": {
@@ -161,7 +174,7 @@ class MemoryReplaceTool(Tool):
 class SkillTool(Tool):
     name = "skill"
     read_only = True
-    description = "Загрузить полный текст скилла по имени из индекса."
+    description = "Загрузить полный текст скилла по имени из индекса. Обязательный аргумент: name."
     parameters = {"type": "object", "properties": {"name": {"type": "string"}},
                   "required": ["name"]}
 
