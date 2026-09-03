@@ -344,18 +344,19 @@ class ConsoleUI:
 
     def on_tool_end(self, call: ToolCall, result: ToolResult) -> None:
         label = self._pending.pop(call.id, self._fmt_call(call.name, None))
-        ms = result.meta.get("duration_ms")
-        suffix = f" · {ms} ms" if ms is not None else ""
-        if result.ok:
-            line = Text.assemble(("  ✓ ", "green"), (call.name, "bold"),
-                                 (f" — {result.summary or 'ok'}", ""), (suffix, "dim"))
-            if result.meta.get("truncated"):
-                line.append(" (обрезано)", style="yellow")
-        else:
-            line = Text.assemble(("  ✗ ", "red"), (call.name, "bold"),
-                                 (f" — {result.summary}", "red"), (suffix, "dim"))
-        line.append(f"\n      {label}", style="dim")
-        self.console.print(line)
+        if call.name != "skill" or result.ok or (result.error or {}).get("type") != "NotFound":
+            ms = result.meta.get("duration_ms")
+            suffix = f" · {ms} ms" if ms is not None else ""
+            if result.ok:
+                line = Text.assemble(("  ✓ ", "green"), (call.name, "bold"),
+                                     (f" — {result.summary or 'ok'}", ""), (suffix, "dim"))
+                if result.meta.get("truncated"):
+                    line.append(" (обрезано)", style="yellow")
+            else:
+                line = Text.assemble(("  ✗ ", "red"), (call.name, "bold"),
+                                     (f" — {result.summary}", "red"), (suffix, "dim"))
+            line.append(f"\n      {label}", style="dim")
+            self.console.print(line)
         if call.name == "todowrite" and result.ok:
             self.print_todos()
         if self._tool_live:
