@@ -48,6 +48,7 @@ class ToolContext:
     interactive: bool = True
     session_allowed: set[str] = field(default_factory=set)
     loaded_skills: dict[str, float] = field(default_factory=dict)
+    on_system_change: Callable[[], None] | None = None
 
 
 @dataclass(slots=True)
@@ -200,4 +201,3 @@ class ToolRegistry:
                 result = ToolResult.failure(type(exc).__name__, f"{exc}")
         result.meta.setdefault("duration_ms", int((time.perf_counter() - started) * 1000))
         return result
-    

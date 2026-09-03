@@ -18,5 +18,7 @@ def workspace(tmp_path: Path) -> Path:
 def ctx(workspace: Path, monkeypatch) -> ToolContext:
     monkeypatch.setattr(Path, "home", staticmethod(lambda: workspace.parent / "home"))
     config = load_config(workspace, env={})
-    skills = SkillIndex(workspace.parent / "home" / ".aisha" / "skills", workspace / ".aisha" / "skills")
+    skills = SkillIndex(
+        workspace.parent / "home" / ".aisha" / "skills", workspace / ".aisha" / "skills"
+    )
     return ToolContext(workspace=workspace, config=config, memory=None, skills=skills, todos=[])

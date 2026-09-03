@@ -102,8 +102,8 @@ class AgentLoop:
     async def _call_model(self, tools: list[dict[str, Any]] | None) -> ChatResponse:
         llm = self.config.llm
         messages = self.context.all_messages()
-        chars_in = self.context.chars_of(messages)
-        est_in = self.context.estimate_tokens(messages)
+        chars_in = self.context.sent_chars()
+        est_in = self.context.estimate_sent_tokens()
         self.events.on_stream_start()
         response = await self.client.chat(
             messages, tools, temperature=llm.temperature,
@@ -175,4 +175,3 @@ class AgentLoop:
             f"История сжата: {len(old)} сообщений → {'сводка' if summary else 'удалены'}."
         )
         return True
-    

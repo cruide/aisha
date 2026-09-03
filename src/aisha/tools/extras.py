@@ -43,6 +43,8 @@ class TodoWriteTool(Tool):
                 raise ToolValidationError(f"недопустимый status {status!r}")
             items.append({"text": str(raw["text"]).strip(), "status": status})
         ctx.todos[:] = items
+        if ctx.on_system_change:
+            ctx.on_system_change()
         done = sum(1 for t in items if t["status"] == "done")
         return ToolResult.success({"items": items}, f"{done}/{len(items)} выполнено")
 
@@ -82,9 +84,11 @@ class MemoryListTool(Tool):
     parameters = {"type": "object", "properties": {}}
 
     async def run(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+        store = _store(ctx)
         blocks = [{"label": b.label, "description": b.description, "scope": b.scope,
-                   "updated_at": b.updated_at} for b in _store(ctx).list()]
-        return ToolResult.success({"blocks": blocks}, f"{len(blocks)} блоков")
+                   "updated_at": b.updated_at} for b in store.list()]
+        return ToolResult.success({"blocks": blocks, "errors": list(store.errors)},
+                                  f"{len(blocks)} блоков")
 
 
 class MemoryGetTool(Tool):
@@ -125,6 +129,8 @@ class MemorySetTool(Tool):
     async def run(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         block = _store(ctx).set(args["label"], args["description"], args["value"],
                                 args.get("scope", "global"))
+        if ctx.on_system_change:
+            ctx.on_system_change()
         return ToolResult.success({"label": block.label, "scope": block.scope,
                                    "chars": len(block.value)}, f"{block.label} ({block.scope})")
 
@@ -146,6 +152,8 @@ class MemoryReplaceTool(Tool):
     async def run(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         block = _store(ctx).replace(args["label"], args["old_text"], args["new_text"],
                                     int(args.get("expected_replacements", 1)))
+        if ctx.on_system_change:
+            ctx.on_system_change()
         return ToolResult.success({"label": block.label, "chars": len(block.value)},
                                   f"{block.label} обновлён")
 
@@ -175,4 +183,3 @@ class SkillTool(Tool):
              "content": body},
             f"{skill.name}, {len(body)} символов",
         )
-    

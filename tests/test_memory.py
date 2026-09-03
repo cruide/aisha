@@ -16,4 +16,3 @@ def test_project_overrides_global_and_replace(tmp_path):
         store.set("bad name!", "d", "v")
     with pytest.raises(ToolValidationError):
         store.set("big", "d", "x" * 101)
-        

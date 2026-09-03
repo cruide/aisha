@@ -32,8 +32,10 @@ async def test_text_and_fragmented_tool_calls():
         {"choices": [{"delta": {"content": "Прив"}}]},
         {"choices": [{"delta": {"content": "ет"}}]},
         {"choices": [{"delta": {"tool_calls": [{"index": 0, "id": "c1",
-                                                "function": {"name": "read_file", "arguments": '{"pa'}}]}}]},
-        {"choices": [{"delta": {"tool_calls": [{"index": 0, "function": {"arguments": 'th": "a.py"}'}}]},
+                                                "function": {"name": "read_file",
+                                                             "arguments": '{"pa'}}]}}]},
+        {"choices": [{"delta": {"tool_calls": [{"index": 0,
+                                                "function": {"arguments": 'th": "a.py"}'}}]},
                       "finish_reason": "tool_calls"}]},
         {"choices": [], "usage": {"prompt_tokens": 10, "completion_tokens": 5}},
     )
@@ -79,4 +81,3 @@ async def test_retry_exhausted(monkeypatch):
 
     with pytest.raises(ServerUnavailableError):
         await make_client(handler).chat([], temperature=0, max_tokens=10)
-        

@@ -117,7 +117,10 @@ class WebFetchTool(Tool):
         cfg = ctx.config.web
         url: str = args["url"].strip()
         max_chars = min(int(args.get("max_chars") or cfg.max_content_chars), cfg.max_content_chars)
-        headers = {"User-Agent": USER_AGENT, "Accept": "text/html,application/xhtml+xml,text/*;q=0.9,*/*;q=0.5"}
+        headers = {
+            "User-Agent": USER_AGENT,
+            "Accept": "text/html,application/xhtml+xml,text/*;q=0.9,*/*;q=0.5",
+        }
         async with httpx.AsyncClient(timeout=cfg.timeout, follow_redirects=False,
                                      headers=headers) as client:
             for _ in range(MAX_REDIRECTS + 1):
@@ -128,7 +131,9 @@ class WebFetchTool(Tool):
                             url = urljoin(url, resp.headers["location"])
                             continue
                         if resp.status_code >= 400:
-                            return ToolResult.failure("HTTPError", f"HTTP {resp.status_code}: {url}")
+                            return ToolResult.failure(
+                                "HTTPError", f"HTTP {resp.status_code}: {url}"
+                            )
                         body = bytearray()
                         truncated = False
                         async for chunk in resp.aiter_bytes():
@@ -155,4 +160,3 @@ class WebFetchTool(Tool):
             {"url": url, "title": title, "content_type": ctype, "text": text},
             f"{title[:60] or url} · {len(text)} символов", truncated=truncated,
         )
-    

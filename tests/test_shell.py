@@ -1,7 +1,9 @@
 import os
+
 import pytest
 
 from aisha.tools.shell import RunCommandTool, find_danger, truncate_output
+
 
 @pytest.mark.parametrize("cmd", [
     "rm -rf ./build", "Remove-Item -Recurse -Force dist", "git push --force origin main",

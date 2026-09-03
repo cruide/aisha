@@ -171,4 +171,3 @@ class RunCommandTool(Tool):
             result.summary = f"exit {code}" + (f": {stderr.strip().splitlines()[-1][:120]}"
                                               if stderr.strip() else "")
         return result
-    

@@ -274,7 +274,9 @@ class GlobTool(Tool):
 class GrepTool(Tool):
     name = "grep"
     read_only = True
-    description = "Regex-поиск по содержимому файлов. include — маска имён файлов, например '*.php'."
+    description = (
+        "Regex-поиск по содержимому файлов. include — маска имён файлов, например '*.php'."
+    )
     parameters = {
         "type": "object",
         "properties": {
@@ -334,4 +336,3 @@ class GrepTool(Tool):
             {"matches": matches, "count": len(matches), "files_scanned": files_scanned},
             f"найдено {len(matches)} совпадений в {files_scanned} файлах", truncated=truncated,
         )
-    

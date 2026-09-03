@@ -200,6 +200,13 @@ def _validate(data: dict[str, Any], source: str) -> None:
         if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
             fail(section, key, f"ожидается положительное число, получено {value!r}")
 
+    def number_in_range(section: str, key: str, lo: float, hi: float) -> None:
+        value = data[section][key]
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            fail(section, key, f"ожидается число от {lo} до {hi}, получено {value!r}")
+        if not lo <= float(value) <= hi:
+            fail(section, key, f"ожидается значение от {lo} до {hi}")
+
     srv, llm, tools = data["server"], data["llm"], data["tools"]
     url = urlparse(str(srv["base_url"]))
     if url.scheme not in ("http", "https") or not url.netloc:
@@ -210,10 +217,8 @@ def _validate(data: dict[str, Any], source: str) -> None:
         positive("server", key)
     for key in ("max_output_tokens", "context_window", "max_tool_iterations"):
         positive("llm", key)
-    if not 0 <= float(llm["temperature"]) <= 2:
-        fail("llm", "temperature", "ожидается значение от 0 до 2")
-    if not 0.5 <= float(llm["context_soft_limit"]) <= 0.95:
-        fail("llm", "context_soft_limit", "ожидается значение от 0.5 до 0.95")
+    number_in_range("llm", "temperature", 0.0, 2.0)
+    number_in_range("llm", "context_soft_limit", 0.5, 0.95)
     if llm["max_output_tokens"] >= llm["context_window"]:
         fail("llm", "max_output_tokens", "должен быть меньше context_window")
     if tools["permission"] not in PERMISSIONS:
@@ -281,6 +286,8 @@ def load_config(
         _deep_merge(data, cli)
         _validate(data, "аргументы командной строки")
         sources.append("CLI")
+
+    sources = list(dict.fromkeys(sources))
 
     return Config(
         server=ServerConfig(**data["server"]),

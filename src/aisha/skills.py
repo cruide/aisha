@@ -75,4 +75,3 @@ class SkillIndex:
 
     def index_text(self) -> str:
         return "\n".join(f"- {s.name} — {s.description}" for s in self.skills.values())
-    

@@ -110,9 +110,16 @@ async def run_doctor(config: Config, client: LlamaClient, ui: ConsoleUI,
         ui.info("Проверьте, что llama-server запущен (команда — в README.md).")
         return False
     try:
-        names = await client.models()
+        info = await client.model_info()
+        names = list(info)
         report(bool(names), "/v1/models", ", ".join(names) or "пусто")
-        model, matched = await client.resolve_model()
+        if not names:
+            return False
+        if client.model in info:
+            model, matched = client.model, True
+        else:
+            model, matched = names[0], False
+            client.model = model
         report(matched, "модель", model if matched else
                f"'{config.server.model}' не найдена, используется '{model}'", warn=True)
     except AishaError as exc:
@@ -168,15 +175,15 @@ async def _amain(args: argparse.Namespace) -> int:
         if args.doctor:
             return 0 if await run_doctor(config, client, ui, args.tool_call_test) else 1
         try:
-            model, matched = await client.resolve_model()
+            model, matched, n_ctx = await client.resolve_model_meta()
         except AishaError as exc:
             ui.error(str(exc), exc)
             ui.info("Подсказка: aisha --doctor покажет подробности; сервер должен слушать "
                     f"{config.server.base_url}.")
             return 1
         if not matched:
-            ui.warn(f"Модель '{config.server.model}' не найдена на сервере, используется '{model}'.")
-        n_ctx = await client.context_window(model)
+            ui.warn(f"Модель '{config.server.model}' не найдена на сервере, "
+                    f"используется '{model}'.")
         if n_ctx:
             config.llm.context_window = n_ctx
 
@@ -190,6 +197,7 @@ async def _amain(args: argparse.Namespace) -> int:
             workspace=workspace, config=config, memory=memory, skills=skills,
             todos=context.todos, confirm=ui.confirm if ui.interactive else None,
             ask=ui.ask_user if ui.interactive else None, interactive=ui.interactive,
+            on_system_change=context.invalidate,
         )
         agent = AgentLoop(config, client, registry, context, tool_ctx, ui)
 
@@ -214,4 +222,3 @@ def main(argv: list[str] | None = None) -> int:
         return asyncio.run(_amain(args))
     except KeyboardInterrupt:
         return 130
-    

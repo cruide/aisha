@@ -7,6 +7,7 @@ import re
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from aisha.errors import ToolValidationError
 from aisha.fsutil import atomic_write_text
@@ -28,6 +29,8 @@ class MemoryStore:
     def __init__(self, global_dir: Path, project_dir: Path, *, max_block_chars: int) -> None:
         self.dirs = {"global": global_dir, "project": project_dir}
         self.max_block_chars = max_block_chars
+        self.errors: list[str] = []
+        self._cache: tuple[tuple[Any, ...], list[MemoryBlock]] | None = None
 
     @staticmethod
     def validate_label(label: str) -> str:
@@ -50,8 +53,23 @@ class MemoryStore:
         except (OSError, ValueError, KeyError, TypeError):
             return None
 
-    def list(self) -> list[MemoryBlock]:
+    def _dir_signature(self) -> tuple[Any, ...]:
+        """Fingerprint of the memory directories; changes when a block file is added/removed."""
+        sig: list[Any] = []
+        for scope in SCOPES:
+            directory = self.dirs[scope]
+            if not directory.is_dir():
+                sig.append(None)
+                continue
+            try:
+                sig.append(directory.stat().st_mtime)
+            except OSError:
+                sig.append(None)
+        return tuple(sig)
+
+    def _read_all(self) -> list[MemoryBlock]:
         blocks: dict[str, MemoryBlock] = {}
+        self.errors = []
         for scope in SCOPES:  # project overrides global
             directory = self.dirs[scope]
             if not directory.is_dir():
@@ -60,7 +78,15 @@ class MemoryStore:
                 block = self._read(path, scope)
                 if block:
                     blocks[block.label] = block
+                else:
+                    self.errors.append(f"{path}: не удалось прочитать блок памяти")
         return sorted(blocks.values(), key=lambda b: b.label)
+
+    def list(self) -> list[MemoryBlock]:
+        signature = self._dir_signature()
+        if self._cache is None or self._cache[0] != signature:
+            self._cache = (signature, self._read_all())
+        return list(self._cache[1])
 
     def get(self, label: str) -> MemoryBlock | None:
         self.validate_label(label)
@@ -92,6 +118,7 @@ class MemoryStore:
             directory / f"{label}.json",
             json.dumps(asdict(block), ensure_ascii=False, indent=2),
         )
+        self._cache = None
         return block
 
     def replace(self, label: str, old: str, new: str, expected: int = 1) -> MemoryBlock:
@@ -109,5 +136,6 @@ class MemoryStore:
         blocks = self.list()
         if not blocks:
             return ""
-        return "\n".join(f"- {b.label} ({b.scope}) — {b.description or 'без описания'}" for b in blocks)
-    
+        return "\n".join(
+            f"- {b.label} ({b.scope}) — {b.description or 'без описания'}" for b in blocks
+        )

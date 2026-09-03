@@ -7,7 +7,9 @@ async def test_write_read_edit(ctx):
     assert r.ok and r.data["action"] == "создан"
     r = await ReadFileTool().run({"path": "src/a.py", "offset": 1, "limit": 1}, ctx)
     assert r.data["content"] == "y = 2\n" and r.data["lines_total"] == 2
-    r = await EditFileTool().run({"path": "src/a.py", "old_text": "x = 1", "new_text": "x = 42"}, ctx)
+    r = await EditFileTool().run(
+        {"path": "src/a.py", "old_text": "x = 1", "new_text": "x = 42"}, ctx
+    )
     assert r.ok and (ctx.workspace / "src" / "a.py").read_text() == "x = 42\ny = 2\n"
     r = await EditFileTool().run({"path": "src/a.py", "old_text": "= ", "new_text": "=="}, ctx)
     assert not r.ok and "2 совпадений" in r.error["message"]
@@ -29,4 +31,3 @@ async def test_grep_skips_excluded_dirs(ctx):
     (ctx.workspace / "a.js").write_text("needle here")
     r = await GrepTool().run({"pattern": "needle"}, ctx)
     assert [m["file"] for m in r.data["matches"]] == ["a.js"]
-    

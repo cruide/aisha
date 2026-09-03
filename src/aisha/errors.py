@@ -35,4 +35,3 @@ class ToolTimeoutError(AishaError):
 
 class ToolCancelledError(AishaError):
     """User cancelled the operation."""
-    

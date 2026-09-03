@@ -56,7 +56,9 @@ class TokenStats:
     approximate: bool = True
     chars_per_token: float = 3.0
 
-    def record(self, usage: dict[str, int] | None, est_in: int, est_out: int, chars_in: int) -> None:
+    def record(
+        self, usage: dict[str, int] | None, est_in: int, est_out: int, chars_in: int
+    ) -> None:
         if usage and usage.get("prompt_tokens"):
             self.last_in = int(usage["prompt_tokens"])
             self.last_out = int(usage.get("completion_tokens", 0))
@@ -80,6 +82,9 @@ class ConversationContext:
         self.memory = memory
         self.skills = skills
         self.messages: list[dict[str, Any]] = []
+        self._messages_chars = 0
+        self._system_prompt: str | None = None
+        self._system_chars = 0
         self.todos: list[dict[str, str]] = []
         self.stats = TokenStats()
         self.agents_md: str = ""
@@ -100,15 +105,29 @@ class ConversationContext:
             if len(text) > AGENTS_MD_LIMIT:
                 text, self.agents_md_truncated = text[:AGENTS_MD_LIMIT], True
             self.agents_md = text
+        self.invalidate()
+
+    def invalidate(self) -> None:
+        """Drop the cached system prompt (memory index, skills or AGENTS.md changed)."""
+        self._system_prompt = None
 
     def reset(self) -> None:
         self.messages.clear()
+        self._messages_chars = 0
         self.todos.clear()
         self.stats.reset()
         self.reload()
 
     # ---------------------------------------------------------------- prompt
     def system_prompt(self) -> str:
+        if self._system_prompt is None:
+            self._system_prompt = self._build_system_prompt()
+            self._system_chars = len(
+                json.dumps({"role": "system", "content": self._system_prompt}, ensure_ascii=False)
+            )
+        return self._system_prompt
+
+    def _build_system_prompt(self) -> str:
         tools_cfg = self.config.tools
         if self.config.read_only:
             mode = "только чтение (запись файлов, shell и изменение памяти недоступны)"
@@ -148,16 +167,24 @@ class ConversationContext:
         return [{"role": "system", "content": self.system_prompt()}, *self.messages]
 
     # --------------------------------------------------------------- history
+    @staticmethod
+    def _chars(msg: dict[str, Any]) -> int:
+        return len(json.dumps(msg, ensure_ascii=False))
+
     def add_user(self, text: str) -> None:
-        self.messages.append({"role": "user", "content": text})
+        msg = {"role": "user", "content": text}
+        self.messages.append(msg)
+        self._messages_chars += self._chars(msg)
 
     def add_assistant(self, response: ChatResponse) -> None:
-        self.messages.append(response.to_message())
+        msg = response.to_message()
+        self.messages.append(msg)
+        self._messages_chars += self._chars(msg)
 
     def add_tool_result(self, call_id: str, name: str, content: str) -> None:
-        self.messages.append(
-            {"role": "tool", "tool_call_id": call_id, "name": name, "content": content}
-        )
+        msg = {"role": "tool", "tool_call_id": call_id, "name": name, "content": content}
+        self.messages.append(msg)
+        self._messages_chars += self._chars(msg)
 
     def close_dangling_tool_calls(self, reason: str) -> None:
         """Ensure every assistant tool_call has a tool message (history must stay valid)."""
@@ -194,13 +221,19 @@ class ConversationContext:
             new.append({"role": "user", "content": f"[Сводка предыдущей части диалога]\n{summary}"})
             new.append({"role": "assistant", "content": "Принято, продолжаю с учётом сводки."})
         self.messages = new + keep
+        self._messages_chars = sum(self._chars(m) for m in self.messages)
 
     # ---------------------------------------------------------------- tokens
-    def chars_of(self, messages: list[dict[str, Any]]) -> int:
-        return sum(len(json.dumps(m, ensure_ascii=False)) for m in messages)
+    def sent_chars(self) -> int:
+        """Character count of what would be sent (system prompt + history)."""
+        self.system_prompt()
+        return self._system_chars + self._messages_chars
 
-    def estimate_tokens(self, messages: list[dict[str, Any]]) -> int:
-        return int(self.chars_of(messages) / self.stats.chars_per_token) + 4 * len(messages)
+    def estimate_sent_tokens(self) -> int:
+        return int(self.sent_chars() / self.stats.chars_per_token) + 4 * (len(self.messages) + 1)
+
+    def estimate_history_tokens(self) -> int:
+        return int(self._messages_chars / self.stats.chars_per_token) + 4 * len(self.messages)
 
     def estimate_text(self, text: str) -> int:
         return int(len(text) / self.stats.chars_per_token)
@@ -211,8 +244,10 @@ class ConversationContext:
         return llm.context_window - llm.max_output_tokens - reserve
 
     def needs_compaction(self) -> bool:
-        current = self.estimate_tokens(self.all_messages())
+        self.system_prompt()
+        sys_tokens = int(self._system_chars / self.stats.chars_per_token)
+        current = self.estimate_history_tokens()
         if not self.stats.approximate:
-            current = max(current, self.stats.ctx)
-        return current >= int(self.input_budget() * self.config.llm.context_soft_limit)
-    
+            current = max(current, self.stats.ctx - sys_tokens)
+        budget = max(1024, self.input_budget() - sys_tokens)
+        return current >= int(budget * self.config.llm.context_soft_limit)

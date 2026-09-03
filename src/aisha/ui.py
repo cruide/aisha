@@ -98,8 +98,8 @@ class ConsoleUI:
         self._nav: int | None = None
         self._draft = ""
         self._stream_live: Live | None = None
-        self._buf: list[str] = []
-        self._rbuf: list[str] = []
+        self._tail: str = ""
+        self._rtail: str = ""
         self._tool_live: Live | None = None
         self._pending: dict[str, str] = {}
 
@@ -264,7 +264,12 @@ class ConsoleUI:
         if not self.context.todos:
             return
         icons = {"pending": "○", "in_progress": "◐", "done": "●", "cancelled": "✕"}
-        styles = {"pending": "", "in_progress": "yellow", "done": "green", "cancelled": "dim strike"}
+        styles = {
+            "pending": "",
+            "in_progress": "yellow",
+            "done": "green",
+            "cancelled": "dim strike",
+        }
         text = Text()
         for t in self.context.todos:
             text.append(f"{icons[t['status']]} {t['text']}\n", style=styles[t["status"]])
@@ -272,40 +277,49 @@ class ConsoleUI:
 
     # ----------------------------------------------------------- agent events
     def on_stream_start(self) -> None:
-        self._buf.clear()
-        self._rbuf.clear()
-        if self.interactive:
+        self._tail = ""
+        self._rtail = ""
+        if self.interactive and self.config and self.config.ui.stream:
             self._stream_live = Live(self._render_stream(), console=self.console,
                                      refresh_per_second=8, transient=True,
                                      vertical_overflow="crop")
             self._stream_live.start()
 
+    def _stream_height(self) -> int:
+        return max(4, self.console.size.height - 8)
+
+    @staticmethod
+    def _grow_tail(current: str, delta: str, height: int) -> str:
+        """Append `delta` keeping only the last `height` lines (O(height), not O(total))."""
+        if not delta:
+            return current
+        return "\n".join((current + delta).splitlines()[-height:])
+
     def _render_stream(self):
-        text = "".join(self._buf)
-        height = max(4, self.console.size.height - 8)
-        label = "aisha отвечает…" if text else "aisha думает…"
+        label = "aisha отвечает…" if self._tail else "aisha думает…"
         parts: list[Any] = [Spinner("dots", text=Text(label, style="magenta"))]
-        if not text and self._rbuf and self.config and self.config.ui.show_reasoning:
-            tail = "\n".join("".join(self._rbuf).splitlines()[-height:])
-            parts.append(Text(tail, style="dim italic"))
-        if text:
-            parts.append(Text("\n".join(text.splitlines()[-height:]), style="dim"))
+        if not self._tail and self._rtail and self.config and self.config.ui.show_reasoning:
+            parts.append(Text(self._rtail, style="dim italic"))
+        if self._tail:
+            parts.append(Text(self._tail, style="dim"))
         return Group(*parts)
 
     def on_text(self, delta: str) -> None:
-        self._buf.append(delta)
         if self._stream_live:
+            self._tail = self._grow_tail(self._tail, delta, self._stream_height())
             self._stream_live.update(self._render_stream())
 
     def on_reasoning(self, delta: str) -> None:
-        self._rbuf.append(delta)
         if self._stream_live:
+            self._rtail = self._grow_tail(self._rtail, delta, self._stream_height())
             self._stream_live.update(self._render_stream())
 
     def on_stream_end(self, response: ChatResponse) -> None:
         if self._stream_live:
             self._stream_live.stop()
             self._stream_live = None
+        if not self.interactive:
+            return
         if response.reasoning and self.config and self.config.ui.show_reasoning:
             self.console.print(Panel(Text(response.reasoning.strip(), style="dim italic"),
                                      title="reasoning", title_align="left", border_style="dim"))
@@ -495,13 +509,13 @@ class ConsoleUI:
             self.console.clear()
         elif cmd == "/init":
             prompt = (
-                "Изучи очень внимательно структуру этого проекта (list_dir, glob, read_file ключевых файлов: "
-                "README, конфиги сборки, точки входа) и создай в корне файл AGENTS.md: подробное "
-                "назначение проекта, команды сборки/тестов/линта, архитектура по каталогам, "
-                "конвенции кода и неочевидные особенности. По возможности, до 25 КБ."
+                "Изучи очень внимательно структуру этого проекта (list_dir, glob, read_file "
+                "ключевых файлов: README, конфиги сборки, точки входа) и создай в корне файл "
+                "AGENTS.md: подробное назначение проекта, команды сборки/тестов/линта, "
+                "архитектура по каталогам, конвенции кода и неочевидные особенности. "
+                "По возможности, до 25 КБ."
             )
             await self._run_cancellable(agent.run(prompt))
         else:
             self.warn(f"Неизвестная команда {cmd}. /help — список команд.")
         return True
-    

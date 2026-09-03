@@ -48,7 +48,9 @@ class ChatResponse:
     usage: dict[str, int] | None = None
 
     def to_message(self) -> dict[str, Any]:
-        msg: dict[str, Any] = {"role": "assistant", "content": self.content}
+        msg: dict[str, Any] = {"role": "assistant"}
+        if self.content or not self.tool_calls:
+            msg["content"] = self.content
         if self.reasoning:
             msg["reasoning_content"] = self.reasoning
         if self.tool_calls:
@@ -130,14 +132,28 @@ class LlamaClient:
 
     async def resolve_model(self) -> tuple[str, bool]:
         """Return (model, matched). Falls back to the first available model."""
+        model, matched, _ = await self.resolve_model_meta()
+        return model, matched
+
+    async def resolve_model_meta(self) -> tuple[str, bool, int | None]:
+        """Resolve the model and fetch its context window in a single /v1/models request.
+
+        Returns (model, matched, n_ctx). Falls back to the first available model.
+        """
         await self.health()
-        names = await self.models()
-        if self.model in names:
-            return self.model, True
-        if not names:
+        info = await self.model_info()
+        names = list(info)
+        if self.model in info:
+            model, matched = self.model, True
+        elif names:
+            self.model = model = names[0]
+            matched = False
+        else:
             raise ServerUnavailableError("Сервер не вернул ни одной модели")
-        self.model = names[0]
-        return self.model, False
+        meta = info.get(model, {})
+        n_ctx = meta.get("n_ctx")
+        n_ctx = n_ctx if isinstance(n_ctx, int) and n_ctx > 0 else None
+        return model, matched, n_ctx
 
     # ------------------------------------------------------------------- chat
     async def chat(
@@ -201,7 +217,9 @@ class LlamaClient:
                         raise ProtocolError(f"Некорректный JSON в SSE: {data[:200]}") from exc
                     self._apply_chunk(chunk, result, pending, on_event)
         except httpx.ReadTimeout as exc:
-            raise ServerUnavailableError("Таймаут ожидания ответа сервера") from exc
+            if started:
+                raise ServerUnavailableError("Таймаут ожидания ответа сервера") from exc
+            raise _Retryable(str(exc)) from exc
         except (httpx.ConnectError, httpx.ConnectTimeout, httpx.RemoteProtocolError) as exc:
             if started:
                 raise ProtocolError(f"Соединение прервано во время ответа: {exc}") from exc
@@ -252,7 +270,10 @@ class LlamaClient:
                 if on_event:
                     on_event("reasoning", reasoning)
             for tc in delta.get("tool_calls") or []:
-                idx = int(tc.get("index", 0))
+                try:
+                    idx = int(tc.get("index", 0))
+                except (TypeError, ValueError):
+                    idx = 0
                 call = pending.setdefault(idx, ToolCall(id="", name=""))
                 if tc.get("id"):
                     call.id = tc["id"]
@@ -263,4 +284,3 @@ class LlamaClient:
                     call.arguments += fn["arguments"]
             if choice.get("finish_reason"):
                 result.finish_reason = choice["finish_reason"]
-                

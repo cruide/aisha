@@ -14,4 +14,3 @@ def test_scan_priority_and_errors(tmp_path):
     assert idx.get("rev").scope == "project"
     assert skill_body(idx.get("rev").path) == "P body"
     assert len(idx.errors) == 1
-    
