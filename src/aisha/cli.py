@@ -188,6 +188,7 @@ async def _amain(args: argparse.Namespace) -> int:
 
         if n_ctx:
             config.llm.context_window = n_ctx
+            config.llm.max_output_tokens = n_ctx
 
         memory = (MemoryStore(config.home_dir / "memory", config.project_dir / "memory",
                               max_block_chars=config.memory.max_block_chars)

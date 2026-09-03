@@ -292,7 +292,7 @@ class ConversationContext:
     def input_budget(self) -> int:
         llm = self.config.llm
         reserve = max(1024, llm.context_window // 32)
-        return llm.context_window - llm.max_output_tokens - reserve
+        return llm.context_window - reserve
 
     def needs_compaction(self) -> bool:
         self.system_prompt()

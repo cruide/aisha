@@ -24,7 +24,7 @@ DEFAULTS: dict[str, dict[str, Any]] = {
     },
     "llm": {
         "temperature": 0.6,
-        "max_output_tokens": 8192,
+        "max_output_tokens": 32768,
         "context_window": 32768,
         "context_soft_limit": 0.85,
         "max_tool_iterations": 25,
@@ -221,8 +221,8 @@ def _validate(data: dict[str, Any], source: str) -> None:
         positive("llm", key)
     number_in_range("llm", "temperature", 0.0, 2.0)
     number_in_range("llm", "context_soft_limit", 0.5, 0.95)
-    if llm["max_output_tokens"] >= llm["context_window"]:
-        fail("llm", "max_output_tokens", "должен быть меньше context_window")
+    if llm["max_output_tokens"] > llm["context_window"]:
+        fail("llm", "max_output_tokens", "не должен превышать context_window")
     if tools["permission"] not in PERMISSIONS:
         fail("tools", "permission", f"допустимо: {', '.join(PERMISSIONS)}")
     if tools["shell_type"] not in SHELLS:
