@@ -97,7 +97,7 @@ request_timeout = 600.0
 
 [llm]
 temperature = 0.6
-max_output_tokens = 8192
+max_output_tokens = 32768
 context_window = 32768
 context_soft_limit = 0.85
 max_tool_iterations = 25
@@ -238,6 +238,3 @@ src/aisha/
 ├── errors.py     # иерархия исключений
 └── tools/        # реализации инструментов (base, files, shell, web, extras)
 ```
-
-Подробную картину по модулям, неочевидным решениям и «граблям» см. в
-[`PROJECT.md`](PROJECT.md).
