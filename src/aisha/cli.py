@@ -181,9 +181,11 @@ async def _amain(args: argparse.Namespace) -> int:
             ui.info("Подсказка: aisha --doctor покажет подробности; сервер должен слушать "
                     f"{config.server.base_url}.")
             return 1
-        if not matched:
-            ui.warn(f"Модель '{config.server.model}' не найдена на сервере, "
-                    f"используется '{model}'.")
+        
+        # if not matched:
+        #     ui.warn(f"Модель '{config.server.model}' не найдена на сервере, "
+        #             f"используется '{model}'.")
+        
         if n_ctx:
             config.llm.context_window = n_ctx
 
