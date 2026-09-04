@@ -19,6 +19,7 @@ DEFAULTS: dict[str, dict[str, Any]] = {
     "server": {
         "base_url": "http://localhost:8088",
         "model": "Qwen3.5-9B-Q4_K_XL",
+        "api_key": "",
         "connect_timeout": 5.0,
         "request_timeout": 600.0,
     },
@@ -63,6 +64,7 @@ DEFAULTS: dict[str, dict[str, Any]] = {
 ENV_VARS: dict[str, tuple[str, str, type]] = {
     "AISHA_SERVER_URL": ("server", "base_url", str),
     "AISHA_MODEL": ("server", "model", str),
+    "AISHA_API_KEY": ("server", "api_key", str),
     "AISHA_PERMISSION": ("tools", "permission", str),
     "AISHA_SHELL": ("tools", "shell_type", str),
     "AISHA_CONTEXT_WINDOW": ("llm", "context_window", int),
@@ -74,6 +76,7 @@ ENV_VARS: dict[str, tuple[str, str, type]] = {
 class ServerConfig:
     base_url: str
     model: str
+    api_key: str
     connect_timeout: float
     request_timeout: float
 
@@ -223,6 +226,8 @@ def _validate(data: dict[str, Any], source: str) -> None:
         fail("server", "base_url", f"некорректный URL {srv['base_url']!r}")
     if not str(srv["model"]).strip():
         fail("server", "model", "имя модели обязательно")
+    if srv["api_key"] is not None and not isinstance(srv["api_key"], str):
+        fail("server", "api_key", "ожидается строка")
     for key in ("connect_timeout", "request_timeout"):
         positive("server", key)
     for key in ("max_output_tokens", "context_window", "max_tool_iterations"):

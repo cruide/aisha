@@ -110,6 +110,17 @@ def test_sampling_params_set(tmp_path: Path, monkeypatch):
     assert cfg.llm.frequency_penalty == 0.5
 
 
+def test_api_key_priority(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    assert load_config(ws, env={}).server.api_key == ""
+    assert load_config(ws, env={"AISHA_API_KEY": "secret"}).server.api_key == "secret"
+    (ws / "aisha.toml").write_text('[server]\napi_key = "project-key"\n')
+    cfg = load_config(ws, env={"AISHA_API_KEY": "secret"})
+    assert cfg.server.api_key == "secret"
+
+
 @pytest.mark.parametrize("key,value", [
     ("top_p", "1.5"),
     ("top_p", '"abc"'),

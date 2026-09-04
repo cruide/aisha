@@ -72,14 +72,17 @@ class LlamaClient:
         base_url: str,
         model: str,
         *,
+        api_key: str = "",
         connect_timeout: float = 5.0,
         request_timeout: float = 600.0,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.model = model
+        headers = {"Authorization": f"Bearer {api_key}"} if api_key else None
         self._http = httpx.AsyncClient(
             base_url=self.base_url,
             timeout=httpx.Timeout(request_timeout, connect=connect_timeout),
+            headers=headers,
         )
         self._stream_options_ok = True
 

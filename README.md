@@ -68,6 +68,7 @@ aisha [промпт...] [флаги]
 | `prompt` (позиционный) | запрос; без него запускается REPL |
 | `--server URL` | адрес llama-server (по умолч. `http://localhost:8088`) |
 | `--model NAME` | имя модели на сервере |
+| `--api-key KEY` | API-ключ для сервера (если требуется авторизация) |
 | `-r`, `--read-only` | режим только для чтения (только безопасные инструменты) |
 | `--permission auto\|ask\|deny` | режим запуска shell-команд |
 | `--shell powershell\|cmd` | оболочка по умолчанию |
@@ -92,6 +93,7 @@ DEFAULTS  ←  ~/.aisha/config.toml  ←  <workspace>/aisha.toml  ←  env AISHA
 [server]
 base_url = "http://localhost:8088"
 model = "Qwen3.5-9B-Q4_K_XL"
+api_key = ""                  # необязательно; если сервер требует авторизацию (Bearer)
 connect_timeout = 5.0
 request_timeout = 600.0
 
@@ -141,6 +143,7 @@ input_history = "~/.aisha/input_history.txt"
 |---|---|
 | `AISHA_SERVER_URL` | `server.base_url` |
 | `AISHA_MODEL` | `server.model` |
+| `AISHA_API_KEY` | `server.api_key` |
 | `AISHA_PERMISSION` | `tools.permission` |
 | `AISHA_SHELL` | `tools.shell_type` |
 | `AISHA_CONTEXT_WINDOW` | `llm.context_window` |
@@ -251,3 +254,6 @@ src/aisha/
 ├── errors.py     # иерархия исключений
 └── tools/        # реализации инструментов (base, files, shell, web, extras)
 ```
+
+Подробную картину по модулям, неочевидным решениям и «граблям» см. в
+[`PROJECT.md`](PROJECT.md).

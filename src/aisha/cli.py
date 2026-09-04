@@ -45,6 +45,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("prompt", nargs="*", help="одноразовый запрос (без него — REPL)")
     p.add_argument("--server", help="URL llama-server, например http://localhost:8088")
     p.add_argument("--model", help="имя модели (alias -a на сервере)")
+    p.add_argument("--api-key", help="API-ключ для сервера (если требуется авторизация)")
     p.add_argument("-r", "--read-only", action="store_true", help="режим только для чтения")
     p.add_argument("--permission", choices=("auto", "ask", "deny"), help="режим shell")
     p.add_argument("--shell", choices=("powershell", "cmd"), help="оболочка по умолчанию")
@@ -64,6 +65,8 @@ def cli_overrides(args: argparse.Namespace) -> dict[str, dict[str, Any]]:
         over.setdefault("server", {})["base_url"] = args.server
     if args.model:
         over.setdefault("server", {})["model"] = args.model
+    if args.api_key:
+        over.setdefault("server", {})["api_key"] = args.api_key
     if args.permission:
         over.setdefault("tools", {})["permission"] = args.permission
     if args.shell:
@@ -169,6 +172,7 @@ async def _amain(args: argparse.Namespace) -> int:
         return 0
 
     client = LlamaClient(config.server.base_url, config.server.model,
+                         api_key=config.server.api_key,
                          connect_timeout=config.server.connect_timeout,
                          request_timeout=config.server.request_timeout)
     try:
