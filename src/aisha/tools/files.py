@@ -1,3 +1,4 @@
+# Author: Tischenko A. (https://github.com/cruide)
 """File tools: read_file, write_file, edit_file, list_dir, glob, grep."""
 
 from __future__ import annotations

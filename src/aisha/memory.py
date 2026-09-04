@@ -1,3 +1,4 @@
+# Author: Tischenko A. (https://github.com/cruide)
 """Persistent memory blocks: global (~/.aisha/memory) and project (<ws>/.aisha/memory)."""
 
 from __future__ import annotations

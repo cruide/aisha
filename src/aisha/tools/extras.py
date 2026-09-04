@@ -1,3 +1,4 @@
+# Author: Tischenko A. (https://github.com/cruide)
 """Auxiliary tools: todowrite, ask_user, memory_*, skill."""
 
 from __future__ import annotations

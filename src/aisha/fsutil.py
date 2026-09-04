@@ -1,3 +1,4 @@
+# Author: Tischenko A. (https://github.com/cruide)
 """Small filesystem helpers shared by tools, memory and skills."""
 
 from __future__ import annotations

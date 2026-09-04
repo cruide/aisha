@@ -1,3 +1,4 @@
+# Author: Tischenko A. (https://github.com/cruide)
 """Async OpenAI-compatible client for llama-server: SSE streaming, tool-call assembly, retries."""
 
 from __future__ import annotations

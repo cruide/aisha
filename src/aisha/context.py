@@ -1,3 +1,4 @@
+# Author: Tischenko A. (https://github.com/cruide)
 """System prompt, conversation history, token accounting and compaction helpers."""
 
 from __future__ import annotations

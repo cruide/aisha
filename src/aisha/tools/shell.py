@@ -1,3 +1,4 @@
+# Author: Tischenko A. (https://github.com/cruide)
 """run_command: PowerShell / cmd execution with timeouts, output limits and confirmations."""
 
 from __future__ import annotations

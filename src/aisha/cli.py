@@ -1,3 +1,4 @@
+# Author: Tischenko A. (https://github.com/cruide)
 """Entry point: argument parsing, wiring, --doctor, one-shot and REPL modes."""
 
 from __future__ import annotations

@@ -1,3 +1,4 @@
+# Author: Tischenko A. (https://github.com/cruide)
 from aisha.tools.files import EditFileTool, GlobTool, GrepTool, ReadFileTool, WriteFileTool
 
 

@@ -1,3 +1,4 @@
+# Author: Tischenko A. (https://github.com/cruide)
 """Skill discovery: <dir>/<name>/SKILL.md with YAML frontmatter (global + project)."""
 
 from __future__ import annotations

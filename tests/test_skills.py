@@ -1,3 +1,4 @@
+# Author: Tischenko A. (https://github.com/cruide)
 from aisha.skills import SkillIndex, skill_body
 
 

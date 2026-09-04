@@ -1,3 +1,4 @@
+# Author: Tischenko A. (https://github.com/cruide)
 """Configuration: defaults <- global TOML <- project TOML <- env <- CLI, with validation."""
 
 from __future__ import annotations

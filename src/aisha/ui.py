@@ -1,3 +1,4 @@
+# Author: Tischenko A. (https://github.com/cruide)
 """Terminal UI: rich output, prompt_toolkit input, REPL commands, confirmations."""
 
 from __future__ import annotations

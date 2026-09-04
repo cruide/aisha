@@ -1,3 +1,4 @@
+# Author: Tischenko A. (https://github.com/cruide)
 """web_search (ddgs) and web_fetch (httpx + BeautifulSoup) with SSRF protections."""
 
 from __future__ import annotations

@@ -1,3 +1,4 @@
+# Author: Tischenko A. (https://github.com/cruide)
 """Tool implementations."""
 
 from aisha.tools.base import Tool, ToolContext, ToolRegistry, ToolResult

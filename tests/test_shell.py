@@ -1,3 +1,4 @@
+# Author: Tischenko A. (https://github.com/cruide)
 import os
 
 import pytest

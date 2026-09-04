@@ -1,3 +1,4 @@
+# Author: Tischenko A. (https://github.com/cruide)
 """Tool ABC, registry, result envelope, argument validation and confirmation protocol."""
 
 from __future__ import annotations

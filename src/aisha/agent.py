@@ -1,3 +1,4 @@
+# Author: Tischenko A. (https://github.com/cruide)
 """AgentLoop: model -> tool calls -> tool results -> model, with limits and compaction."""
 
 from __future__ import annotations
