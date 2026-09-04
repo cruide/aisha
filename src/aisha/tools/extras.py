@@ -108,6 +108,8 @@ class MemoryGetTool(Tool):
 
     async def run(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         block = _store(ctx).get(args["label"])
+
+
         if block is None:
             return ToolResult.failure("NotFound", f"Блок памяти не найден: {args['label']}")
         return ToolResult.success(

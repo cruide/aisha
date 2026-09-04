@@ -177,24 +177,31 @@ class ConsoleUI:
 
     def print_banner(self, model: str) -> None:
         cfg = self.config
+
         assert cfg is not None
+
         mode = "read-only" if cfg.read_only else f"permission={cfg.tools.permission}"
+
         body = Text()
+
         body.append("aisha ", style="bold magenta")
         body.append(f"v{__version__}", style="dim")
-        body.append(f"  ·  {model}", style="cyan")
-        body.append(f"  ·  контекст {fmt_ctx(cfg.llm.context_window)}\n", style="green")
+        body.append(f" · Model: ", style="cyan")
+        body.append(f"{model}", style="green")
+        body.append(f" · Ctx: ", style="cyan")
+        body.append(f"{fmt_ctx(cfg.llm.context_window)}\n", style="green")
         body.append(f"workspace: {cfg.workspace}\n", style="dim")
-        body.append(f"{cfg.server.base_url}  ·  {mode}  ·  shell: {cfg.tools.shell_type}\n",
-                    style="dim")
-        body.append("/help — команды · Tab — пути · Ctrl+↑/↓ — прошлые запросы · "
-                    "Ctrl+C — прервать", style="dim")
+        body.append(f"{cfg.server.base_url} · {mode} · shell: {cfg.tools.shell_type}\n", style="dim")
+        body.append("/help — команды · Tab — пути · Ctrl+↑/↓ — прошлые запросы · Ctrl+C — прервать", style="dim")
+
         self.console.print(Panel(body, border_style="magenta", padding=(0, 1)))
 
     def print_help(self) -> None:
         table = Table(box=None, show_header=False, padding=(0, 2))
+
         for cmd, desc in COMMANDS.items():
             table.add_row(f"[bold cyan]{cmd}[/]", desc)
+
         self.console.print(Panel(table, title="Команды", title_align="left", border_style="cyan"))
 
     def print_tools(self, registry: ToolRegistry) -> None:
@@ -514,7 +521,7 @@ class ConsoleUI:
                 "ключевых файлов: README, конфиги сборки, точки входа) и создай в корне файл "
                 "AGENTS.md: подробное назначение проекта, команды сборки/тестов/линта, "
                 "архитектура по каталогам, конвенции кода и неочевидные особенности. "
-                "По возможности, до 25 КБ."
+                "По возможности, до 25 КБ. Вся информация в AGENTS.md должна быть на английском языке."
             )
             await self._run_cancellable(agent.run(prompt))
         else:
