@@ -84,7 +84,15 @@ class AgentLoop:
             response = await self._call_model(tools)
             self.context.add_assistant(response)
             if response.finish_reason == "length":
-                self.events.on_notice("Ответ обрезан: достигнут лимит max_output_tokens.", "warn")
+                if response.tool_calls:
+                    self.events.on_notice(
+                        "Ответ обрезан: достигнут лимит max_output_tokens; вызовы инструментов "
+                        "могут быть неполными.", "warn",
+                    )
+                else:
+                    self.events.on_notice(
+                        "Ответ обрезан: достигнут лимит max_output_tokens.", "warn",
+                    )
             if not response.tool_calls:
                 return response.content
             if limit_hit:
@@ -103,7 +111,8 @@ class AgentLoop:
                 )
                 limit_hit = True
                 continue
-            await self._execute_calls(response.tool_calls)
+            await self._execute_calls(response.tool_calls,
+                                      truncated=response.finish_reason == "length")
             skip_compact = False
 
     def _refuse_calls(self, calls: list[ToolCall], message: str) -> None:
@@ -184,20 +193,20 @@ class AgentLoop:
         return "\n".join(parts) or "(пусто)"
 
     # ----------------------------------------------------------------- tools
-    async def _execute_calls(self, calls: list[ToolCall]) -> None:
+    async def _execute_calls(self, calls: list[ToolCall], *, truncated: bool = False) -> None:
         i = 0
         while i < len(calls):
             if calls[i].name in PARALLEL_TOOLS:
                 j = i
                 while j < len(calls) and calls[j].name in PARALLEL_TOOLS:
                     j += 1
-                await asyncio.gather(*(self._run_call(c) for c in calls[i:j]))
+                await asyncio.gather(*(self._run_call(c, truncated=truncated) for c in calls[i:j]))
                 i = j
             else:
-                await self._run_call(calls[i])
+                await self._run_call(calls[i], truncated=truncated)
                 i += 1
 
-    async def _run_call(self, call: ToolCall) -> None:
+    async def _run_call(self, call: ToolCall, *, truncated: bool = False) -> None:
         tool = self.registry.get(call.name)
         silent = bool(tool and tool.silent)
         try:
@@ -205,8 +214,14 @@ class AgentLoop:
         except ValueError as exc:
             if not silent:
                 self.events.on_tool_start(call, None)
-            result = ToolResult.failure("ToolValidationError",
-                                        f"Некорректный JSON аргументов: {exc}")
+            message = f"Некорректный JSON аргументов: {exc}"
+            if truncated:
+                message += (
+                    ". Вывод модели был обрезан по лимиту токенов (max_tokens). Разбей "
+                    "содержимое на меньшие части и повтори: скелет через write_file, затем "
+                    "дополняй edit_file или отдельными write_file."
+                )
+            result = ToolResult.failure("ToolValidationError", message)
         else:
             if not silent:
                 self.events.on_tool_start(call, args)

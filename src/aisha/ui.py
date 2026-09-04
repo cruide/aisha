@@ -193,7 +193,7 @@ class ConsoleUI:
         body = Text()
 
         body.append("AISHA ", style="bold yellow")
-        body.append(f"v{__version__}", style="dim")
+        body.append(f"v{__version__}", style="white")
         body.append(" · MODEL: ", style="cyan")
         body.append(f"{model}", style="green")
         body.append(" · N_CTX: ", style="cyan")
