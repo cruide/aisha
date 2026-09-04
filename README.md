@@ -26,8 +26,16 @@ OpenAI-совместимому REST API. Это **не веб-приложен�
 
 ## Установка
 
+Из PyPI (рекомендуется):
+
 ```bash
-pip install -e ".[dev]"   # src-layout: без этого пакет `aisha` не импортируется
+pip install aisha
+```
+
+Для разработки из исходников (src-layout):
+
+```bash
+pip install -e ".[dev]"   # editable-установка: изменения в src/ сразу подхватываются
 ```
 
 Точка входа — `aisha = "aisha.cli:main"` (см. `pyproject.toml`).
