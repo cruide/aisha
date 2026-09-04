@@ -164,6 +164,7 @@ class LlamaClient:
         temperature: float,
         max_tokens: int,
         on_event: EventCallback | None = None,
+        sampling: dict[str, Any] | None = None,
     ) -> ChatResponse:
         payload: dict[str, Any] = {
             "model": self.model,
@@ -172,6 +173,8 @@ class LlamaClient:
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
+        if sampling:
+            payload.update(sampling)
         if tools:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"

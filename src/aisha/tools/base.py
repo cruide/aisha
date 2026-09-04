@@ -147,6 +147,7 @@ class Tool(ABC):
     description: str = ""
     parameters: dict[str, Any] = {"type": "object", "properties": {}}
     read_only: bool = False  # True => allowed in --read-only mode
+    silent: bool = False  # True => do not show call/result lines in the UI
 
     def schema(self) -> dict[str, Any]:
         return {

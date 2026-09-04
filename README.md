@@ -97,6 +97,10 @@ request_timeout = 600.0
 
 [llm]
 temperature = 0.6
+top_p = 0.9                 # необязательно; None = не передавать (используется серверный умолчание)
+top_k = 40                  # необязательно; целое > 0
+repeat_penalty = 1.1        # необязательно; > 0
+frequency_penalty = 0.0     # необязательно; -2.0 .. 2.0
 max_output_tokens = 32768
 context_window = 32768
 context_soft_limit = 0.85
@@ -173,9 +177,18 @@ input_history = "~/.aisha/input_history.txt"
 
 - **Память** — JSON-блоки в `~/.aisha/memory/` (глобально) и `<workspace>/.aisha/memory/`
   (проектно). Проектный блок перекрывает глобальный с тем же `label`.
+  Вызов `memory_get` не выводится в консоль (это фоновое чтение собственной памяти агента).
 - **Скиллы** — каталоги `~/.aisha/skills/<name>/SKILL.md` и
   `<workspace>/.aisha/skills/<name>/SKILL.md` с обязательным YAML-frontmatter
   (`name`, `description`).
+
+## Кастомный системный промпт (SYSTEM.md)
+
+Если в корне проекта есть файл `<workspace>/.aisha/SYSTEM.md`, его содержимое
+**полностью заменяет** встроенный системный промпт aisha (persona, окружение, правила,
+секции памяти и скиллов). При этом «Справочник инструментов» (`tool_guide = true`),
+`AGENTS.md` и текущий todo-список по-прежнему добавляются после него. Файл обрезается
+до 64 КБ, как и `AGENTS.md`.
 
 ## REPL
 
@@ -238,3 +251,6 @@ src/aisha/
 ├── errors.py     # иерархия исключений
 └── tools/        # реализации инструментов (base, files, shell, web, extras)
 ```
+
+Подробную картину по модулям, неочевидным решениям и «граблям» см. в
+[`PROJECT.md`](PROJECT.md).

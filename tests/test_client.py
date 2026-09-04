@@ -81,3 +81,35 @@ async def test_retry_exhausted(monkeypatch):
 
     with pytest.raises(ServerUnavailableError):
         await make_client(handler).chat([], temperature=0, max_tokens=10)
+
+
+async def test_sampling_params_passed_in_payload():
+    captured = {}
+
+    def handler(request):
+        captured["payload"] = json.loads(request.content)
+        return httpx.Response(200, content=sse({"choices": [{"delta": {"content": "ok"}}]}))
+
+    client = make_client(handler)
+    await client.chat([], temperature=0.7, max_tokens=10,
+                       sampling={"top_p": 0.9, "top_k": 40, "repeat_penalty": 1.1,
+                                 "frequency_penalty": 0.0})
+    payload = captured["payload"]
+    assert payload["top_p"] == 0.9
+    assert payload["top_k"] == 40
+    assert payload["repeat_penalty"] == 1.1
+    assert payload["frequency_penalty"] == 0.0
+
+
+async def test_no_sampling_by_default():
+    captured = {}
+
+    def handler(request):
+        captured["payload"] = json.loads(request.content)
+        return httpx.Response(200, content=sse({"choices": [{"delta": {"content": "ok"}}]}))
+
+    client = make_client(handler)
+    await client.chat([], temperature=0, max_tokens=10)
+    payload = captured["payload"]
+    assert "top_p" not in payload and "top_k" not in payload
+    assert "repeat_penalty" not in payload and "frequency_penalty" not in payload

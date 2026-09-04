@@ -84,3 +84,45 @@ def test_tool_guide_must_be_bool(tmp_path: Path, monkeypatch):
     with pytest.raises(ConfigurationError, match="tool_guide"):
         load_config(ws, env={})
 
+
+def test_sampling_defaults_none(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    cfg = load_config(ws, env={})
+    assert cfg.llm.top_p is None
+    assert cfg.llm.top_k is None
+    assert cfg.llm.repeat_penalty is None
+    assert cfg.llm.frequency_penalty is None
+
+
+def test_sampling_params_set(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    (ws / "aisha.toml").write_text(
+        "[llm]\ntop_p = 0.9\ntop_k = 40\nrepeat_penalty = 1.1\nfrequency_penalty = 0.5\n"
+    )
+    cfg = load_config(ws, env={})
+    assert cfg.llm.top_p == 0.9
+    assert cfg.llm.top_k == 40
+    assert cfg.llm.repeat_penalty == 1.1
+    assert cfg.llm.frequency_penalty == 0.5
+
+
+@pytest.mark.parametrize("key,value", [
+    ("top_p", "1.5"),
+    ("top_p", '"abc"'),
+    ("top_k", "0"),
+    ("top_k", '"abc"'),
+    ("repeat_penalty", "0"),
+    ("frequency_penalty", "3.0"),
+])
+def test_sampling_validation(tmp_path: Path, monkeypatch, key, value):
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    (ws / "aisha.toml").write_text(f"[llm]\n{key} = {value}\n")
+    with pytest.raises(ConfigurationError, match=key):
+        load_config(ws, env={})
+

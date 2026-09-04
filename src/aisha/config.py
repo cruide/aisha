@@ -23,7 +23,11 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "request_timeout": 600.0,
     },
     "llm": {
-        "temperature": 0.6,
+        "temperature": 0.7,
+        "top_p": None,
+        "top_k": None,
+        "repeat_penalty": None,
+        "frequency_penalty": None,
         "max_output_tokens": 32768,
         "context_window": 32768,
         "context_soft_limit": 0.85,
@@ -77,6 +81,10 @@ class ServerConfig:
 @dataclass(slots=True)
 class LLMConfig:
     temperature: float
+    top_p: float | None
+    top_k: int | None
+    repeat_penalty: float | None
+    frequency_penalty: float | None
     max_output_tokens: int
     context_window: int
     context_soft_limit: float
@@ -221,6 +229,20 @@ def _validate(data: dict[str, Any], source: str) -> None:
         positive("llm", key)
     number_in_range("llm", "temperature", 0.0, 2.0)
     number_in_range("llm", "context_soft_limit", 0.5, 0.95)
+    if llm["top_p"] is not None:
+        number_in_range("llm", "top_p", 0.0, 1.0)
+    if llm["top_k"] is not None:
+        if isinstance(llm["top_k"], bool) or not isinstance(llm["top_k"], int) \
+                or llm["top_k"] <= 0:
+            fail("llm", "top_k", f"ожидается положительное целое, получено {llm['top_k']!r}")
+    if llm["repeat_penalty"] is not None:
+        if isinstance(llm["repeat_penalty"], bool) \
+                or not isinstance(llm["repeat_penalty"], (int, float)) \
+                or llm["repeat_penalty"] <= 0:
+            fail("llm", "repeat_penalty",
+                 f"ожидается положительное число, получено {llm['repeat_penalty']!r}")
+    if llm["frequency_penalty"] is not None:
+        number_in_range("llm", "frequency_penalty", -2.0, 2.0)
     if llm["max_output_tokens"] > llm["context_window"]:
         fail("llm", "max_output_tokens", "не должен превышать context_window")
     if tools["permission"] not in PERMISSIONS:

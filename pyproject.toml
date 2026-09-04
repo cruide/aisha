@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "aisha"
-version = "0.1.0"
+version = "0.2.1"
 description = "Local console AI agent for working with source code, files, CLI and internet"
 requires-python = ">=3.11"
 dependencies = [
@@ -17,14 +17,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=8.0",
-    "pytest-asyncio>=0.23",
-    "ruff>=0.6",
-]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.6"]
 
 [project.scripts]
 aisha = "aisha.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aisha"]
 
 [tool.ruff]
 line-length = 100

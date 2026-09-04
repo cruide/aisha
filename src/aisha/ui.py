@@ -67,6 +67,13 @@ def fmt_ctx(n: int) -> str:
     return fmt_int(n)
 
 
+def fmt_short(n: int) -> str:
+    if n < 1024:
+        return fmt_int(n)
+    value = n / 1024
+    return f"{value:.0f}K" if n % 1024 == 0 else f"{value:.1f}K"
+
+
 class AishaCompleter(Completer):
     """Slash commands at line start, filesystem paths for the last word otherwise."""
 
@@ -149,13 +156,13 @@ class ConsoleUI:
         stats = self.context.stats if self.context else None
         width = shutil.get_terminal_size((80, 24)).columns
         if not stats or not self.config:
-            status = "ctx: — | last: — | session: —"
+            status = "CTX: — | Last: — | Session: —"
         else:
-            tilde = "~" if stats.approximate and stats.ctx else ""
+            pct = round(stats.ctx * 100 / self.config.llm.context_window)
             status = (
-                f"ctx: {tilde}{fmt_int(stats.ctx)} / {fmt_int(self.config.llm.context_window)}"
-                f" | last: ↑ {fmt_int(stats.last_in)} ↓ {fmt_int(stats.last_out)}"
-                f" | session: ↑ {fmt_int(stats.session_in)} ↓ {fmt_int(stats.session_out)}"
+                f"CTX: {fmt_short(stats.ctx)} (~{pct}%)"
+                f" | Last: ↑{fmt_short(stats.last_in)} ↓{fmt_short(stats.last_out)}"
+                f" | Session: ↑{fmt_short(stats.session_in)} ↓{fmt_short(stats.session_out)}"
             )
             if self.config.read_only:
                 status += " | read-only"
@@ -232,6 +239,7 @@ class ConsoleUI:
             ("Сообщений", str(len(ctx.messages))),
             ("Инструментов", str(len(registry.names()))),
             ("AGENTS.md", "загружен" if ctx.agents_md else "нет"),
+            ("SYSTEM.md", "заменяет базовый промпт" if ctx.system_md else "нет"),
             ("Конфиги", ", ".join(cfg.sources) or "по умолчанию"),
         ]
         for k, v in rows:
@@ -333,7 +341,6 @@ class ConsoleUI:
         if response.content.strip():
             self.console.print(Panel(Markdown(response.content, code_theme="monokai"),
                                      title="aisha", title_align="left", border_style="magenta"))
-
     def on_tool_start(self, call: ToolCall, args: dict[str, Any] | None) -> None:
         self._pending[call.id] = self._fmt_call(call.name, args)
         if not self.interactive:

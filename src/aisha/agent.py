@@ -104,10 +104,19 @@ class AgentLoop:
         messages = self.context.all_messages()
         chars_in = self.context.sent_chars()
         est_in = self.context.estimate_sent_tokens()
+        sampling = {
+            key: value for key, value in (
+                ("top_p", llm.top_p),
+                ("top_k", llm.top_k),
+                ("repeat_penalty", llm.repeat_penalty),
+                ("frequency_penalty", llm.frequency_penalty),
+            ) if value is not None
+        }
         self.events.on_stream_start()
         response = await self.client.chat(
             messages, tools, temperature=llm.temperature,
             max_tokens=llm.max_output_tokens, on_event=self._on_event,
+            sampling=sampling or None,
         )
         produced = response.content + response.reasoning + "".join(
             c.arguments for c in response.tool_calls
@@ -138,16 +147,21 @@ class AgentLoop:
                 i += 1
 
     async def _run_call(self, call: ToolCall) -> None:
+        tool = self.registry.get(call.name)
+        silent = bool(tool and tool.silent)
         try:
             args = call.parse_arguments()
         except ValueError as exc:
-            self.events.on_tool_start(call, None)
+            if not silent:
+                self.events.on_tool_start(call, None)
             result = ToolResult.failure("ToolValidationError",
                                         f"Некорректный JSON аргументов: {exc}")
         else:
-            self.events.on_tool_start(call, args)
+            if not silent:
+                self.events.on_tool_start(call, args)
             result = await self.registry.execute(call.name, args, self.tool_ctx)
-        self.events.on_tool_end(call, result)
+        if not silent:
+            self.events.on_tool_end(call, result)
         self.context.add_tool_result(call.id, call.name, result.to_json())
 
     # ------------------------------------------------------------ compaction

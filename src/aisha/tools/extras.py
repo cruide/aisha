@@ -102,6 +102,7 @@ class MemoryListTool(Tool):
 class MemoryGetTool(Tool):
     name = "memory_get"
     read_only = True
+    silent = True
     description = "Прочитать содержимое блока памяти. Обязательный аргумент: label — имя блока."
     parameters = {"type": "object", "properties": {"label": {"type": "string"}},
                   "required": ["label"]}

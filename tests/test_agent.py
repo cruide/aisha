@@ -43,7 +43,8 @@ class FakeClient:
         self.responses = list(responses)
         self.calls = []
 
-    async def chat(self, messages, tools=None, *, temperature, max_tokens, on_event=None):
+    async def chat(self, messages, tools=None, *, temperature, max_tokens, on_event=None,
+                   sampling=None):
         self.calls.append((messages, tools))
         resp = self.responses.pop(0)
         return resp(messages) if callable(resp) else resp
@@ -52,6 +53,8 @@ class FakeClient:
 class FakeEvents:
     def __init__(self):
         self.notices = []
+        self.starts = []
+        self.ends = []
 
     def on_stream_start(self):
         pass
@@ -66,10 +69,10 @@ class FakeEvents:
         pass
 
     def on_tool_start(self, call, args):
-        pass
+        self.starts.append(call.name)
 
     def on_tool_end(self, call, result):
-        pass
+        self.ends.append(call.name)
 
     def on_notice(self, text, level="info"):
         self.notices.append((level, text))
@@ -177,3 +180,51 @@ def test_tool_guide_injected_when_enabled(config, skills, workspace):
     assert "Справочник инструментов" in prompt
     assert "read_file" in prompt and "edit_file" in prompt
     assert "old_text" in prompt
+
+
+def test_system_md_replaces_base_prompt(config, skills, workspace):
+    (workspace / ".aisha").mkdir(exist_ok=True)
+    (workspace / ".aisha" / "SYSTEM.md").write_text("Ты — кастомный ассистент.", encoding="utf-8")
+    context = ConversationContext(config, None, skills)
+    prompt = context.system_prompt()
+    assert prompt.startswith("Ты — кастомный ассистент.")
+    assert "Ты — Aisha" not in prompt
+
+
+def test_system_md_still_appends_agents_md(config, skills, workspace):
+    (workspace / ".aisha").mkdir(exist_ok=True)
+    (workspace / ".aisha" / "SYSTEM.md").write_text("CUSTOM", encoding="utf-8")
+    (workspace / "AGENTS.md").write_text("AGENTS CONTENT", encoding="utf-8")
+    context = ConversationContext(config, None, skills)
+    prompt = context.system_prompt()
+    assert prompt.startswith("CUSTOM")
+    assert "AGENTS CONTENT" in prompt
+    assert "## Инструкции проекта" in prompt
+
+
+async def test_silent_tool_skips_events(config, skills, workspace):
+    class Silent(Tool):
+        name = "silent"
+        read_only = True
+        silent = True
+        parameters = {"type": "object", "properties": {}}
+
+        async def run(self, args, ctx):
+            return ToolResult.success(None, "ok")
+
+    events = FakeEvents()
+    registry = ToolRegistry()
+    registry.register(Silent())
+    context = ConversationContext(config, None, skills)
+    tool_ctx = ToolContext(workspace=workspace, config=config, memory=None, skills=skills,
+                           todos=context.todos, on_system_change=context.invalidate)
+    client = FakeClient([
+        ChatResponse(tool_calls=[ToolCall(id="c1", name="silent", arguments="{}")]),
+        ChatResponse(content="done"),
+    ])
+    agent = AgentLoop(config, client, registry, context, tool_ctx, events)
+    result = await agent.run("go")
+    assert result == "done"
+    assert events.starts == [] and events.ends == []
+    tool_msgs = [m for m in context.messages if m.get("role") == "tool"]
+    assert len(tool_msgs) == 1

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import platform
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from aisha.client import ChatResponse
@@ -13,6 +14,19 @@ from aisha.memory import MemoryStore
 from aisha.skills import SkillIndex
 
 AGENTS_MD_LIMIT = 64 * 1024
+
+
+def _read_md(path: Path) -> tuple[str, bool]:
+    """Read a Markdown file truncated to AGENTS_MD_LIMIT; returns (text, truncated)."""
+    if not path.is_file():
+        return "", False
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return "", False
+    if len(text) > AGENTS_MD_LIMIT:
+        return text[:AGENTS_MD_LIMIT], True
+    return text, False
 
 BASE_PROMPT = """\
 Ты — Aisha, локальный консольный AI-агент для работы с исходным кодом, файлами, командной \
@@ -138,22 +152,18 @@ class ConversationContext:
         self.stats = TokenStats()
         self.agents_md: str = ""
         self.agents_md_truncated = False
+        self.system_md: str = ""
+        self.system_md_truncated = False
         self.reload()
 
     # ------------------------------------------------------------- lifecycle
     def reload(self) -> None:
-        """Re-read AGENTS.md, skills index and memory descriptions."""
+        """Re-read AGENTS.md, SYSTEM.md, skills index and memory descriptions."""
         self.skills.scan()
-        self.agents_md, self.agents_md_truncated = "", False
-        path = self.config.workspace / "AGENTS.md"
-        if path.is_file():
-            try:
-                text = path.read_text(encoding="utf-8", errors="replace")
-            except OSError:
-                text = ""
-            if len(text) > AGENTS_MD_LIMIT:
-                text, self.agents_md_truncated = text[:AGENTS_MD_LIMIT], True
-            self.agents_md = text
+        self.agents_md, self.agents_md_truncated = _read_md(self.config.workspace / "AGENTS.md")
+        self.system_md, self.system_md_truncated = _read_md(
+            self.config.project_dir / "SYSTEM.md"
+        )
         self.invalidate()
 
     def invalidate(self) -> None:
@@ -178,32 +188,35 @@ class ConversationContext:
 
     def _build_system_prompt(self) -> str:
         tools_cfg = self.config.tools
-        if self.config.read_only:
-            mode = "только чтение (запись файлов, shell и изменение памяти недоступны)"
-        elif not tools_cfg.shell or tools_cfg.permission == "deny":
-            mode = "обычный, shell запрещён"
+        if self.system_md:
+            prompt = self.system_md
         else:
-            mode = f"обычный, shell: permission={tools_cfg.permission}"
-        memory_section = ""
-        if self.memory is not None:
-            index = self.memory.index_text()
-            memory_section = (
-                f"\nДоступные блоки (memory_get для чтения):\n{index}\n" if index
-                else "\nБлоков памяти пока нет.\n"
+            if self.config.read_only:
+                mode = "только чтение (запись файлов, shell и изменение памяти недоступны)"
+            elif not tools_cfg.shell or tools_cfg.permission == "deny":
+                mode = "обычный, shell запрещён"
+            else:
+                mode = f"обычный, shell: permission={tools_cfg.permission}"
+            memory_section = ""
+            if self.memory is not None:
+                index = self.memory.index_text()
+                memory_section = (
+                    f"\nДоступные блоки (memory_get для чтения):\n{index}\n" if index
+                    else "\nБлоков памяти пока нет.\n"
+                )
+            skills_index = self.skills.index_text()
+            skills_section = (
+                f"Загружай полный текст через skill(name):\n{skills_index}" if skills_index
+                else "Скиллы не найдены."
             )
-        skills_index = self.skills.index_text()
-        skills_section = (
-            f"Загружай полный текст через skill(name):\n{skills_index}" if skills_index
-            else "Скиллы не найдены."
-        )
-        prompt = BASE_PROMPT.format(
-            os_name=f"{platform.system()} {platform.release()}",
-            shell=tools_cfg.shell_type,
-            workspace=str(self.config.workspace),
-            mode=mode,
-            memory_section=memory_section,
-            skills_section=skills_section,
-        )
+            prompt = BASE_PROMPT.format(
+                os_name=f"{platform.system()} {platform.release()}",
+                shell=tools_cfg.shell_type,
+                workspace=str(self.config.workspace),
+                mode=mode,
+                memory_section=memory_section,
+                skills_section=skills_section,
+            )
         if self.tool_guide:
             prompt += f"\n{self.tool_guide}\n"
         if self.agents_md:
