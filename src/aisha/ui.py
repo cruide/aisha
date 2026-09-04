@@ -194,13 +194,18 @@ class ConsoleUI:
 
         body.append("AISHA ", style="bold yellow")
         body.append(f"v{__version__}", style="dim")
-        body.append(f" · MODEL: ", style="cyan")
+        body.append(" · MODEL: ", style="cyan")
         body.append(f"{model}", style="green")
-        body.append(f" · N_CTX: ", style="cyan")
+        body.append(" · N_CTX: ", style="cyan")
         body.append(f"{fmt_ctx(cfg.llm.context_window)}\n", style="green")
         body.append(f"Workspace: {cfg.workspace}\n", style="dim")
-        body.append(f"{cfg.server.base_url} · {mode} · Shell: {cfg.tools.shell_type}\n", style="dim")
-        body.append("/help — команды · Tab — пути · Ctrl+↑/↓ — прошлые запросы · Ctrl+C — прервать", style="dim")
+        body.append(
+            f"{cfg.server.base_url} · {mode} · Shell: {cfg.tools.shell_type}\n", style="dim"
+        )
+        body.append(
+            "/help — команды · Tab — пути · Ctrl+↑/↓ — прошлые запросы · Ctrl+C — прервать",
+            style="dim",
+        )
 
         self.console.print(Panel(body, border_style="magenta", padding=(0, 1)))
 
@@ -536,7 +541,8 @@ class ConsoleUI:
                 "ключевых файлов: README, конфиги сборки, точки входа) и создай в корне файл "
                 "AGENTS.md: подробное назначение проекта, команды сборки/тестов/линта, "
                 "архитектура по каталогам, конвенции кода и неочевидные особенности. "
-                "По возможности, до 25 КБ. Вся информация в AGENTS.md должна быть на английском языке."
+                "По возможности, до 25 КБ. Вся информация в AGENTS.md должна быть "
+                "на английском языке."
             )
             await self._run_cancellable(agent.run(prompt))
         else:
