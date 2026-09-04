@@ -280,16 +280,29 @@ class GlobTool(Tool):
         include_ignored = bool(args.get("include_ignored", False))
         found: list[str] = []
         truncated = False
-        for path in base.glob(args["pattern"]):
-            rel_parts = path.relative_to(base).parts
-            if any(_skip_dir(p, include_ignored) for p in rel_parts[:-1]):
-                continue
-            if not path.is_file():
-                continue
-            if len(found) >= limit:
-                truncated = True
-                break
-            found.append(_rel(path, ctx))
+        allow_outside = ctx.config.tools.allow_read_outside_workspace
+        try:
+            for path in base.glob(args["pattern"]):
+                try:
+                    resolved = path.resolve()
+                except OSError:
+                    continue
+                if not is_inside(resolved, ctx.workspace) and not allow_outside:
+                    continue
+                try:
+                    rel_parts = resolved.relative_to(base).parts
+                except ValueError:
+                    rel_parts = ()
+                if any(_skip_dir(p, include_ignored) for p in rel_parts[:-1]):
+                    continue
+                if not resolved.is_file():
+                    continue
+                if len(found) >= limit:
+                    truncated = True
+                    break
+                found.append(_rel(resolved, ctx))
+        except (ValueError, NotImplementedError, OSError) as exc:
+            return ToolResult.failure("ToolValidationError", f"Некорректная маска: {exc}")
         found.sort()
         return ToolResult.success({"files": found, "count": len(found)},
                                   f"найдено {len(found)} файлов", truncated=truncated)

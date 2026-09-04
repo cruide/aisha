@@ -125,7 +125,7 @@ request_timeout = 600
 
 [llm]
 temperature = 0.6
-max_output_tokens = 8192
+max_output_tokens = 65536
 context_window = 65536
 context_soft_limit = 0.85
 max_tool_iterations = 25
@@ -155,6 +155,7 @@ max_block_chars = 30000
 theme = "dark"
 stream = true
 show_reasoning = false
+debug = false
 ```
 
 > Имя модели в конфиге — только подсказка. Если объявленное имя не совпадает с `-a` на сервере, `aisha` автоматически подключается к первой доступной модели и не падает.

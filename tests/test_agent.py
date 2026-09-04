@@ -55,6 +55,7 @@ class FakeEvents:
         self.notices = []
         self.starts = []
         self.ends = []
+        self.debugs = []
 
     def on_stream_start(self):
         pass
@@ -76,6 +77,9 @@ class FakeEvents:
 
     def on_notice(self, text, level="info"):
         self.notices.append((level, text))
+
+    def on_debug(self, title, body):
+        self.debugs.append((title, body))
 
 
 def make_agent(config, skills, workspace, client, events=None):
@@ -115,6 +119,42 @@ async def test_parallel_read_only_calls_both_execute(config, skills, workspace, 
     assert result == "ok"
     tool_msgs = [m for m in agent.context.messages if m.get("role") == "tool"]
     assert len(tool_msgs) == 2
+
+
+async def test_compaction_does_not_loop_when_still_over_limit(config, skills, workspace):
+    client = FakeClient([ChatResponse(content="ok")])
+    events = FakeEvents()
+    agent = make_agent(config, skills, workspace, client, events)
+    compact_calls = {"n": 0}
+
+    async def fake_compact(*, force: bool = False) -> bool:
+        compact_calls["n"] += 1
+        if compact_calls["n"] > 5:
+            raise AssertionError("compaction loop")
+        return True
+
+    agent.compact = fake_compact  # type: ignore[method-assign]
+    agent.context.needs_compaction = lambda: True  # type: ignore[method-assign]
+    result = await agent.run("x")
+    assert result == "ok"
+    assert compact_calls["n"] == 1
+    assert any("сжатие" in text.lower() for _, text in events.notices)
+
+
+async def test_max_tokens_capped_to_remaining_context(config, skills, workspace):
+    class CaptureClient(FakeClient):
+        async def chat(self, messages, tools=None, *, temperature, max_tokens, on_event=None,
+                       sampling=None):
+            self.calls.append(max_tokens)
+            return self.responses.pop(0)
+
+    config.llm.context_window = 1000
+    config.llm.max_output_tokens = 1000
+    client = CaptureClient([ChatResponse(content="ok")])
+    agent = make_agent(config, skills, workspace, client)
+    await agent.run("hi")
+    sent = client.calls[0]
+    assert 256 <= sent < config.llm.context_window
 
 
 async def test_iteration_limit_stops_tool_loop(config, skills, workspace):
@@ -228,3 +268,23 @@ async def test_silent_tool_skips_events(config, skills, workspace):
     assert events.starts == [] and events.ends == []
     tool_msgs = [m for m in context.messages if m.get("role") == "tool"]
     assert len(tool_msgs) == 1
+
+
+async def test_debug_emits_request_response_and_tool_dumps(config, skills, workspace):
+    config.ui.debug = True
+    client = FakeClient([
+        ChatResponse(tool_calls=[ToolCall(id="c1", name="echo", arguments='{"text": "hi"}')]),
+        ChatResponse(content="готово", reasoning="обдумываю"),
+    ])
+    events = FakeEvents()
+    agent = make_agent(config, skills, workspace, client, events)
+    result = await agent.run("позови echo")
+    assert result == "готово"
+    titles = [title for title, _ in events.debugs]
+    assert "→ model" in titles
+    assert "← model" in titles
+    assert any(title.startswith("tool:") for title in titles)
+    request = [body for title, body in events.debugs if title == "→ model"][0]
+    assert "user" in request and "позови echo" in request
+    response = [body for title, body in events.debugs if title == "← model"][-1]
+    assert "обдумываю" in response

@@ -1,4 +1,4 @@
-from aisha.tools.files import EditFileTool, GrepTool, ReadFileTool, WriteFileTool
+from aisha.tools.files import EditFileTool, GlobTool, GrepTool, ReadFileTool, WriteFileTool
 
 
 async def test_write_read_edit(ctx):
@@ -23,6 +23,18 @@ async def test_path_traversal_blocked(ctx):
     reg.register(ReadFileTool())
     r = await reg.execute("read_file", {"path": "../outside.txt"}, ctx)
     assert not r.ok and r.error["type"] == ToolPermissionError.__name__
+
+
+async def test_glob_blocks_paths_outside_workspace(ctx):
+    outside = ctx.workspace.parent / "secret.env"
+    outside.write_text("SECRET", encoding="utf-8")
+    (ctx.workspace / "inside.py").write_text("ok", encoding="utf-8")
+    r = await GlobTool().run({"pattern": "../secret.env"}, ctx)
+    assert r.ok and r.data["files"] == []
+    r = await GlobTool().run({"pattern": str(outside)}, ctx)
+    assert not r.ok or r.data["files"] == []
+    r = await GlobTool().run({"pattern": "*.py"}, ctx)
+    assert r.data["files"] == ["inside.py"]
 
 
 async def test_grep_skips_excluded_dirs(ctx):

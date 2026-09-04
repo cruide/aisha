@@ -173,7 +173,7 @@ class ConsoleUI:
     def error(self, text: str, exc: BaseException | None = None) -> None:
         self._stop_lives()
         self.console.print(f"[bold red]✗[/] {escape(text)}")
-        if exc is not None and self.debug:
+        if exc is not None and (self.debug or (self.config and self.config.ui.debug)):
             self.console.print(Text("".join(traceback.format_exception(exc)), style="dim"))
 
     def warn(self, text: str) -> None:
@@ -191,14 +191,14 @@ class ConsoleUI:
 
         body = Text()
 
-        body.append("aisha ", style="bold magenta")
+        body.append("AISHA ", style="bold yellow")
         body.append(f"v{__version__}", style="dim")
-        body.append(f" · Model: ", style="cyan")
+        body.append(f" · MODEL: ", style="cyan")
         body.append(f"{model}", style="green")
-        body.append(f" · Ctx: ", style="cyan")
+        body.append(f" · N_CTX: ", style="cyan")
         body.append(f"{fmt_ctx(cfg.llm.context_window)}\n", style="green")
-        body.append(f"workspace: {cfg.workspace}\n", style="dim")
-        body.append(f"{cfg.server.base_url} · {mode} · shell: {cfg.tools.shell_type}\n", style="dim")
+        body.append(f"Workspace: {cfg.workspace}\n", style="dim")
+        body.append(f"{cfg.server.base_url} · {mode} · Shell: {cfg.tools.shell_type}\n", style="dim")
         body.append("/help — команды · Tab — пути · Ctrl+↑/↓ — прошлые запросы · Ctrl+C — прервать", style="dim")
 
         self.console.print(Panel(body, border_style="magenta", padding=(0, 1)))
@@ -310,10 +310,13 @@ class ConsoleUI:
             return current
         return "\n".join((current + delta).splitlines()[-height:])
 
+    def _show_reasoning(self) -> bool:
+        return bool(self.config and (self.config.ui.show_reasoning or self.config.ui.debug))
+
     def _render_stream(self):
         label = "aisha отвечает…" if self._tail else "aisha думает…"
-        parts: list[Any] = [Spinner("dots", text=Text(label, style="magenta"))]
-        if not self._tail and self._rtail and self.config and self.config.ui.show_reasoning:
+        parts: list[Any] = [Spinner("dots", text=Text(label, style="yellow3"))]
+        if not self._tail and self._rtail and self._show_reasoning():
             parts.append(Text(self._rtail, style="dim italic"))
         if self._tail:
             parts.append(Text(self._tail, style="dim"))
@@ -335,7 +338,7 @@ class ConsoleUI:
             self._stream_live = None
         if not self.interactive:
             return
-        if response.reasoning and self.config and self.config.ui.show_reasoning:
+        if response.reasoning and self._show_reasoning():
             self.console.print(Panel(Text(response.reasoning.strip(), style="dim italic"),
                                      title="reasoning", title_align="left", border_style="dim"))
         if response.content.strip():
@@ -382,6 +385,10 @@ class ConsoleUI:
 
     def on_notice(self, text: str, level: str = "info") -> None:
         (self.warn if level == "warn" else self.info)(text)
+
+    def on_debug(self, title: str, body: str) -> None:
+        self.console.print(Panel(Text(body, style="dim"), title=f"debug · {title}",
+                                 title_align="left", border_style="blue"))
 
     @staticmethod
     def _fmt_call(name: str, args: dict[str, Any] | None) -> str:

@@ -76,7 +76,7 @@ aisha [промпт...] [флаги]
 | `--doctor` | диагностика подключения к серверу |
 | `--tool-call-test` | вместе с `--doctor`: проверить tool calling |
 | `--no-color` | отключить цвета |
-| `--debug` | полные traceback ошибок |
+| `--debug` | режим отладки: reasoning модели, дампы запросов/ответов, traceback |
 | `--version` | показать версию |
 
 ## Конфигурация
@@ -134,6 +134,7 @@ max_block_chars = 30000
 theme = "dark"
 stream = true
 show_reasoning = false
+debug = false                 # true — то же, что --debug: reasoning + дампы запросов/ответов
 input_history = "~/.aisha/input_history.txt"
 ```
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Any, Protocol
 
 from aisha.client import ChatResponse, LlamaClient, ToolCall
@@ -33,6 +34,7 @@ class AgentEvents(Protocol):
     def on_tool_start(self, call: ToolCall, args: dict[str, Any] | None) -> None: ...
     def on_tool_end(self, call: ToolCall, result: ToolResult) -> None: ...
     def on_notice(self, text: str, level: str = "info") -> None: ...
+    def on_debug(self, title: str, body: str) -> None: ...
 
 
 class AgentLoop:
@@ -66,9 +68,17 @@ class AgentLoop:
         llm = self.config.llm
         iterations = 0
         limit_hit = False
+        skip_compact = False
         while True:
-            if self.context.needs_compaction():
+            if not skip_compact and self.context.needs_compaction():
                 await self.compact()
+                if self.context.needs_compaction():
+                    skip_compact = True
+                    self.events.on_notice(
+                        "Сжатие не освободило достаточно контекста; "
+                        "продолжаю без повторной попытки.",
+                        "warn",
+                    )
             tools = None if limit_hit else self.registry.schemas(read_only=self.config.read_only)
             response = await self._call_model(tools)
             self.context.add_assistant(response)
@@ -93,6 +103,7 @@ class AgentLoop:
                 limit_hit = True
                 continue
             await self._execute_calls(response.tool_calls)
+            skip_compact = False
 
     def _refuse_calls(self, calls: list[ToolCall], message: str) -> None:
         for call in calls:
@@ -112,10 +123,14 @@ class AgentLoop:
                 ("frequency_penalty", llm.frequency_penalty),
             ) if value is not None
         }
+        remaining = llm.context_window - est_in
+        max_tokens = max(256, min(llm.max_output_tokens, remaining))
+        if self.config.ui.debug:
+            self.events.on_debug("→ model", self._format_request(messages, est_in))
         self.events.on_stream_start()
         response = await self.client.chat(
             messages, tools, temperature=llm.temperature,
-            max_tokens=llm.max_output_tokens, on_event=self._on_event,
+            max_tokens=max_tokens, on_event=self._on_event,
             sampling=sampling or None,
         )
         produced = response.content + response.reasoning + "".join(
@@ -124,6 +139,8 @@ class AgentLoop:
         self.context.stats.record(response.usage, est_in, self.context.estimate_text(produced),
                                   chars_in)
         self.events.on_stream_end(response)
+        if self.config.ui.debug:
+            self.events.on_debug("← model", self._format_response(response))
         return response
 
     def _on_event(self, kind: str, delta: str) -> None:
@@ -131,6 +148,39 @@ class AgentLoop:
             self.events.on_text(delta)
         elif kind == "reasoning":
             self.events.on_reasoning(delta)
+
+    @staticmethod
+    def _clip(text: str, limit: int) -> str:
+        text = text.strip()
+        return text if len(text) <= limit else text[:limit] + "…"
+
+    def _format_request(self, messages: list[dict[str, Any]], est_tokens: int) -> str:
+        lines = [f"сообщений: {len(messages)}, ~{est_tokens} токенов"]
+        for m in messages:
+            role = m.get("role")
+            if m.get("tool_calls"):
+                names = [c.get("function", {}).get("name", "?") for c in m["tool_calls"]]
+                lines.append(f"  {role}: [tool_calls] {', '.join(names)}")
+                continue
+            content = m.get("content")
+            body = content if isinstance(content, str) else json.dumps(content,
+                                                                       ensure_ascii=False)
+            lines.append(f"  {role}: {self._clip(body, 240)}")
+        return "\n".join(lines)
+
+    def _format_response(self, response: ChatResponse) -> str:
+        parts: list[str] = []
+        if response.reasoning:
+            parts.append(f"reasoning: {self._clip(response.reasoning, 600)}")
+        if response.content:
+            parts.append(f"content: {self._clip(response.content, 600)}")
+        for c in response.tool_calls:
+            parts.append(f"tool_call: {c.name}({self._clip(c.arguments, 300)})")
+        if response.finish_reason:
+            parts.append(f"finish_reason: {response.finish_reason}")
+        if response.usage:
+            parts.append(f"usage: {response.usage}")
+        return "\n".join(parts) or "(пусто)"
 
     # ----------------------------------------------------------------- tools
     async def _execute_calls(self, calls: list[ToolCall]) -> None:
@@ -163,6 +213,8 @@ class AgentLoop:
         if not silent:
             self.events.on_tool_end(call, result)
         self.context.add_tool_result(call.id, call.name, result.to_json())
+        if self.config.ui.debug and not silent:
+            self.events.on_debug(f"tool: {call.name}", self._clip(result.to_json(), 2000))
 
     # ------------------------------------------------------------ compaction
     async def compact(self, *, force: bool = False) -> bool:

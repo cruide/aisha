@@ -57,6 +57,7 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "theme": "dark",
         "stream": True,
         "show_reasoning": False,
+        "debug": False,
         "input_history": "~/.aisha/input_history.txt",
     },
 }
@@ -127,6 +128,7 @@ class UIConfig:
     theme: str
     stream: bool
     show_reasoning: bool
+    debug: bool
     input_history: str
 
 
@@ -140,7 +142,6 @@ class Config:
     ui: UIConfig
     workspace: Path
     read_only: bool = False
-    debug: bool = False
     sources: list[str] = field(default_factory=list)
 
     @property
@@ -263,7 +264,7 @@ def _validate(data: dict[str, Any], source: str) -> None:
         ("tools", "shell"), ("tools", "web_search"),
         ("tools", "allow_read_outside_workspace"), ("tools", "allow_write_outside_workspace"),
         ("web", "allow_private_hosts"), ("memory", "enabled"),
-        ("ui", "stream"), ("ui", "show_reasoning"),
+        ("ui", "stream"), ("ui", "show_reasoning"), ("ui", "debug"),
         ("llm", "tool_guide"),
     )
     for section, key in bool_keys:
@@ -276,7 +277,6 @@ def load_config(
     *,
     cli: dict[str, dict[str, Any]] | None = None,
     read_only: bool = False,
-    debug: bool = False,
     env: dict[str, str] | None = None,
 ) -> Config:
     """Build the effective configuration for `workspace`."""
@@ -328,6 +328,5 @@ def load_config(
         ui=UIConfig(**data["ui"]),
         workspace=workspace,
         read_only=read_only,
-        debug=debug,
         sources=sources,
     )

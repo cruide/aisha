@@ -54,7 +54,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--tool-call-test", action="store_true",
                    help="с --doctor: проверить tool calling")
     p.add_argument("--no-color", action="store_true", help="отключить цвета")
-    p.add_argument("--debug", action="store_true", help="полные traceback ошибок")
+    p.add_argument("--debug", action="store_true",
+                   help="режим отладки: reasoning модели, дампы запросов/ответов, traceback")
     p.add_argument("--version", action="version", version=f"aisha {__version__}")
     return p
 
@@ -71,6 +72,8 @@ def cli_overrides(args: argparse.Namespace) -> dict[str, dict[str, Any]]:
         over.setdefault("tools", {})["permission"] = args.permission
     if args.shell:
         over.setdefault("tools", {})["shell_type"] = args.shell
+    if args.debug:
+        over.setdefault("ui", {})["debug"] = True
     return over
 
 
@@ -160,8 +163,7 @@ async def _amain(args: argparse.Namespace) -> int:
     no_color = args.no_color or bool(os.environ.get("NO_COLOR"))
     ui = ConsoleUI(no_color=no_color, debug=args.debug)
     try:
-        config = load_config(workspace, cli=cli_overrides(args), read_only=args.read_only,
-                             debug=args.debug)
+        config = load_config(workspace, cli=cli_overrides(args), read_only=args.read_only)
     except ConfigurationError as exc:
         ui.error(f"Ошибка конфигурации: {exc}")
         return 2
