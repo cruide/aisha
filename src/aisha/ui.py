@@ -322,7 +322,7 @@ class ConsoleUI:
         return bool(self.config and (self.config.ui.show_reasoning or self.config.ui.debug))
 
     def _render_stream(self):
-        label = "aisha replying…" if self._tail else "aisha thinking…"
+        label = "Aisha replying…" if self._tail else "Aisha thinking…"
         parts: list[Any] = [Spinner("dots", text=Text(label, style="yellow3"))]
         if not self._tail and self._rtail and self._show_reasoning():
             parts.append(Text(self._rtail, style="dim italic"))

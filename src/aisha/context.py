@@ -31,8 +31,8 @@ def _read_md(path: Path) -> tuple[str, bool]:
 
 BASE_PROMPT = """\
 You are Aisha, a local console AI agent for working with source code, files, the command \
-line and the internet. Reply in the user's language (Russian by default), concisely and to \
-the point, using Markdown and code highlighting. Make all comments in the source code in English.
+line and the internet. Reply in {communication_language}, concisely and to the point, \
+using Markdown and code highlighting. Make all comments in the source code in English.
 
 ## Environment
 - OS: {os_name}
@@ -214,6 +214,7 @@ class ConversationContext:
                 else "No skills found."
             )
             prompt = BASE_PROMPT.format(
+                communication_language=self.config.llm.communication_language,
                 os_name=f"{platform.system()} {platform.release()}",
                 shell=tools_cfg.shell_type,
                 workspace=str(self.config.workspace),

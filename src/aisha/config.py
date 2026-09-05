@@ -36,11 +36,12 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "context_soft_limit": 0.85,
         "max_tool_iterations": 25,
         "tool_guide": False,
+        "communication_language": "Russian",
     },
     "tools": {
         "shell": True,
         "web_search": True,
-        "permission": "ask",
+        "permission": "auto",
         "shell_type": "powershell",
         "shell_timeout": 120,
         "max_output_chars": 65536,
@@ -81,6 +82,7 @@ ENV_VARS: dict[str, tuple[str, str, type] | tuple[str, str, Any]] = {
     "AISHA_SHELL": ("tools", "shell_type", str),
     "AISHA_CONTEXT_WINDOW": ("llm", "context_window", int),
     "AISHA_MAX_OUTPUT_TOKENS": ("llm", "max_output_tokens", int),
+    "AISHA_COMMUNICATION_LANGUAGE": ("llm", "communication_language", str),
 }
 
 
@@ -106,6 +108,7 @@ class LLMConfig:
     context_soft_limit: float
     max_tool_iterations: int
     tool_guide: bool
+    communication_language: str
 
 
 @dataclass(slots=True)
@@ -283,6 +286,9 @@ def _validate(data: dict[str, Any], source: str) -> None:
     for section, key in bool_keys:
         if not isinstance(data[section][key], bool):
             fail(section, key, "expected true/false")
+    lang = llm["communication_language"]
+    if not isinstance(lang, str) or not lang.strip():
+        fail("llm", "communication_language", "expected a non-empty string")
 
 
 def load_config(

@@ -234,6 +234,9 @@ async def _amain(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    import gc
+    import warnings
+
     args = build_parser().parse_args(argv)
     if os.name == "nt":
         for stream in (sys.stdout, sys.stderr):
@@ -245,3 +248,10 @@ def main(argv: list[str] | None = None) -> int:
         return asyncio.run(_amain(args))
     except KeyboardInterrupt:
         return 130
+    finally:
+        # On Windows, ProactorEventLoop pipe transports may raise during __del__
+        # when GC runs after the loop is closed (CPython #94228). Suppress them.
+        if os.name == "nt":
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", ResourceWarning)
+                gc.collect()
