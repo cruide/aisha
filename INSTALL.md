@@ -1,73 +1,75 @@
-# Установка агента aisha
+# Installing the aisha Agent
 
-`aisha` — локальный консольный AI-агент на Python 3.11+. Он работает с внешним `llama-server` (llama.cpp) через OpenAI-совместимый API и не требует облачных LLM или API-ключей.
+> 🇷🇺 [Русская версия](INSTALL_RU.md)
 
-## 1. Требования
+`aisha` — a local console AI agent in Python 3.11+. Works with an external `llama-server` (llama.cpp) via an OpenAI-compatible API and does not require cloud LLMs or API keys.
 
-- **OS:** Windows 11 (основная), также работает на других ОС, поддерживающих Python 3.11+
-- **Python 3.11+** (включая `pip` и `venv`)
-- **Запущенный `llama-server`** из llama.cpp с поддержкой OpenAI-compatible API
-- **GGUF-модель** и, при необходимости, chat-template (jinja)
+## 1. Requirements
 
-## 2. Установка Python (если ещё нет)
+- **OS:** Windows 11 (primary), also works on other OSes supporting Python 3.11+
+- **Python 3.11+** (including `pip` and `venv`)
+- **A running `llama-server`** from llama.cpp with OpenAI-compatible API support
+- **A GGUF model** and, if needed, a chat-template (jinja)
 
-Проверьте версию:
+## 2. Installing Python (if not already installed)
+
+Check the version:
 
 ```powershell
 python --version
 ```
 
-Нужен `Python 3.11` или новее. Если Python отсутствует — установите его с https://www.python.org/downloads/ (обязательно отметьте «Add python.exe to PATH»).
+You need `Python 3.11` or newer. If Python is missing — install it from https://www.python.org/downloads/ (be sure to check "Add python.exe to PATH").
 
-## 3. Установка aisha
+## 3. Installing aisha
 
-### Вариант 1: из PyPI (рекомендуется)
+### Option 1: from PyPI (recommended)
 
 ```bash
 pip install aisha
 ```
 
-Самый простой способ: пакет устанавливается с https://pypi.org/project/aisha/ вместе со всеми зависимостями, команда `aisha` доступна глобально.
+The simplest way: the package is installed from https://pypi.org/project/aisha/ with all dependencies, the `aisha` command is available globally.
 
-### Вариант 2: из исходников (репозиторий)
+### Option 2: from source (repository)
 
-Склонируйте или скопируйте репозиторий в рабочую директорию, затем из корня проекта:
+Clone or copy the repository to your working directory, then from the project root:
 
 ```bash
 pip install -e ".[dev]"
 ```
 
-`-e` (editable) устанавливает агент в режиме разработки: изменения в `src/` сразу подхватываются, а команда `aisha` доступна глобально. Dev-зависимости (pytest, ruff) ставятся вместе.
+`-e` (editable) installs the agent in development mode: changes in `src/` are picked up immediately, and the `aisha` command is available globally. Dev dependencies (pytest, ruff) are installed as well.
 
-### Вариант 3: изолированно через pipx
+### Option 3: isolated via pipx
 
 ```bash
 pipx install aisha
 ```
 
-Изолирует агент и его зависимости от остального окружения. Команда `aisha` также доступна глобально.
+Isolates the agent and its dependencies from the rest of the environment. The `aisha` command is also available globally.
 
-> Примечание: зависимости проекта — `httpx`, `rich`, `prompt-toolkit`, `ddgs`, `beautifulsoup4`, `PyYAML`. Они ставятся автоматически.
+> Note: project dependencies are `httpx`, `rich`, `prompt-toolkit`, `ddgs`, `beautifulsoup4`, `PyYAML`. They are installed automatically.
 
-### Проверка установки
+### Verifying installation
 
 ```bash
 aisha --help
 ```
 
-Должна отобразиться справка по команде.
+The command help should be displayed.
 
-## 4. Установка и настройка llama-server
+## 4. Installing and configuring llama-server
 
-`aisha` не загружает модель сам — за него это делает внешний `llama-server`.
+`aisha` does not load the model itself — the external `llama-server` does it.
 
-1. Скачайте сборку llama.cpp (CUDA или CPU) с https://github.com/ggml-org/llama.cpp/releases.
-2. Скачайте GGUF-модель, например Qwen:
+1. Download the llama.cpp build (CUDA or CPU) from https://github.com/ggml-org/llama.cpp/releases.
+2. Download a GGUF model, e.g., Qwen:
    `d:\models\llama\qwen\Qwen3.5-9B-UD-Q4_K_XL.gguf`
-3. При необходимости подготовьте jinja chat-template:
+3. If needed, prepare a jinja chat-template:
    `d:\models\llama\qwen\chat_template.jinja`
 
-### Запуск сервера
+### Starting the server
 
 ```powershell
 z:\llamacpp\cuda\llama-server.exe `
@@ -92,37 +94,37 @@ z:\llamacpp\cuda\llama-server.exe `
   -lv 4
 ```
 
-Ключевые параметры для работы с `aisha`:
+Key parameters for working with `aisha`:
 
-| Параметр | Значение | Назначение |
+| Parameter | Value | Purpose |
 | --- | --- | --- |
-| `--host localhost` | локальный доступ | безопаснее, чем `0.0.0.0` |
-| `--port 8088` | порт агента по умолчанию | совпадает с дефолтом в конфиге |
-| `--tools all` | tool calling | нативный OpenAI-style tool calling |
-| `-a Qwen3.5-9B-Q4_K_XL` | alias модели | только подсказка для агента |
-| `-c 65536` | контекст | должен совпадать с `context_window` в конфиге |
+| `--host localhost` | local access | safer than `0.0.0.0` |
+| `--port 8088` | default agent port | matches the default in config |
+| `--tools all` | tool calling | native OpenAI-style tool calling |
+| `-a Qwen3.5-9B-Q4_K_XL` | model alias | just a hint for the agent |
+| `-c 65536` | context | must match `context_window` in config |
 
-> Безопасность: не публикуйте `llama-server` в интернет. Без reverse proxy, аутентификации и ограничения доступа он должен слушать только `localhost`.
+> Security: do not expose `llama-server` to the internet. Without a reverse proxy, authentication, and access restrictions, it should only listen on `localhost`.
 
-### Проверка сервера
+### Checking the server
 
 ```powershell
 Invoke-RestMethod http://localhost:8088/health
 ```
 
-Ожидаемый ответ:
+Expected response:
 
 ```text
 {"status":"ok"}
 ```
 
-## 5. Конфигурация aisha
+## 5. Configuring aisha
 
-Агент работает с настройками по умолчанию сразу после установки, но для удобства можно создать глобальный конфиг.
+The agent works with default settings right after installation, but for convenience you can create a global config.
 
-### Глобальная конфигурация
+### Global configuration
 
-Файл: `%USERPROFILE%\.aisha\config.toml`
+File: `%USERPROFILE%\.aisha\config.toml`
 
 ```toml
 [server]
@@ -166,95 +168,95 @@ show_reasoning = false
 debug = false
 ```
 
-> Имя модели в конфиге — только подсказка. Если объявленное имя не совпадает с `-a` на сервере, `aisha` автоматически подключается к первой доступной модели и не падает.
+> The model name in config is just a hint. If the declared name doesn't match `-a` on the server, `aisha` automatically connects to the first available model without crashing.
 
-### Проектная конфигурация
+### Project configuration
 
-Файл `<workspace>/aisha.toml` переопределяет глобальные настройки для конкретного проекта. Он **не может ослабить безопасность**: `permission = "auto"`, чтение/запись за пределами workspace и т.п. приводят к ошибке конфигурации.
+File `<workspace>/aisha.toml` overrides global settings for a specific project. It **cannot weaken security**: `permission = "auto"`, read/write outside the workspace, etc. will cause a configuration error.
 
-### Приоритет настроек
+### Settings priority
 
-1. Аргументы командной строки
-2. Переменные окружения (`AISHA_SERVER_URL`, `AISHA_MODEL`, `AISHA_PERMISSION`, `AISHA_SHELL`, `AISHA_CONTEXT_WINDOW`, `AISHA_MAX_OUTPUT_TOKENS`)
-3. Проектный `aisha.toml`
-4. Глобальный `~/.aisha/config.toml`
-5. Значения по умолчанию
+1. Command-line arguments
+2. Environment variables (`AISHA_SERVER_URL`, `AISHA_MODEL`, `AISHA_PERMISSION`, `AISHA_SHELL`, `AISHA_CONTEXT_WINDOW`, `AISHA_MAX_OUTPUT_TOKENS`)
+3. Project `aisha.toml`
+4. Global `~/.aisha/config.toml`
+5. Default values
 
-## 6. Диагностика
+## 6. Diagnostics
 
-Проверка соединения с сервером и доступности модели:
+Checking server connection and model availability:
 
 ```bash
 aisha --doctor
 ```
 
-Расширенная проверка tool calling (отправляет безопасный тестовый запрос без shell-команд и записи файлов):
+Extended tool calling check (sends a safe test request without shell commands or file writes):
 
 ```bash
 aisha --doctor --tool-call-test
 ```
 
-## 7. Первый запуск
+## 7. First launch
 
-Из любой рабочей директории:
+From any working directory:
 
 ```bash
 aisha
 ```
 
-Откроется интерактивный REPL. Полезные команды: `/status` — сервер, модель, workspace, токены; `/help` — справка.
+An interactive REPL will open. Useful commands: `/status` — server, model, workspace, tokens; `/help` — help.
 
-Одноразовый запрос:
-
-```bash
-aisha "Объясни структуру этого проекта"
-```
-
-Другие полезные флаги:
+One-time request:
 
 ```bash
-aisha --server http://localhost:8088   # другой llama-server
-aisha --model Qwen3.5-9B-Q4_K_XL       # переопределение модели
-aisha -r                               # режим только для чтения
-aisha --permission deny                # запрет shell-команд
-aisha --permission auto                # выполнять разрешённые команды без подтверждения
-aisha --shell cmd                      # cmd вместо PowerShell
-aisha --tools-only                     # список доступных инструментов
+aisha "Explain the structure of this project"
 ```
 
-## 8. Обновление
+Other useful flags:
 
-Из PyPI:
+```bash
+aisha --server http://localhost:8088   # different llama-server
+aisha --model Qwen3.5-9B-Q4_K_XL       # override model
+aisha -r                               # read-only mode
+aisha --permission deny                # deny shell commands
+aisha --permission auto                # run allowed commands without confirmation
+aisha --shell cmd                      # cmd instead of PowerShell
+aisha --tools-only                     # list available tools
+```
+
+## 8. Updating
+
+From PyPI:
 
 ```bash
 pip install --upgrade aisha
 ```
 
-Из репозитория (editable):
+From repository (editable):
 
 ```bash
 pip install -e ".[dev]" --upgrade
 ```
 
-Для pipx:
+For pipx:
 
 ```bash
 pipx upgrade aisha
 ```
 
-## 9. Устранение неполадок
+## 9. Troubleshooting
 
-| Симптом | Решение |
+| Symptom | Solution |
 | --- | --- |
-| `ServerUnavailableError` при старте REPL | `llama-server` не запущен или недоступен. Проверьте `http://localhost:8088/health`. |
-| Модель ещё загружается | Подождите, пока `llama-server` не загрузит GGUF, затем повторите `aisha --doctor`. |
-| Ошибка конфигурации из `aisha.toml` | Проектный конфиг не может ослаблять безопасность — переместите такие настройки в глобальный `config.toml` или передайте флагом CLI. |
-| Команда `aisha` не найдена | Переустановите пакет (`pip install -e .`) или проверьте, что каталог Scripts Python в PATH. |
-| `permission = "ask"` мешает | Запустите с `--permission auto` или задайте `AISHA_PERMISSION=auto`. |
+| `ServerUnavailableError` at REPL start | `llama-server` is not running or unavailable. Check `http://localhost:8088/health`. |
+| Model is still loading | Wait until `llama-server` loads the GGUF, then repeat `aisha --doctor`. |
+| Configuration error from `aisha.toml` | Project config cannot weaken security — move such settings to the global `config.toml` or pass them as CLI flags. |
+| `aisha` command not found | Reinstall the package (`pip install -e .`) or check that the Python Scripts directory is in PATH. |
+| `permission = "ask"` is annoying | Run with `--permission auto` or set `AISHA_PERMISSION=auto`. |
 
-## 10. Тестирование и проверка кода (разработка)
+## 10. Testing and code review (development)
 
 ```bash
-python -m pytest tests/ -q   # тесты (не требуют llama-server)
-ruff check src/ tests/       # линт
+python -m pytest tests/ -q   # tests (do not require llama-server)
+ruff check src/ tests/       # lint
 ```

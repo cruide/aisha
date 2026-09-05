@@ -1,48 +1,50 @@
-# aisha
+# AISHA
 
-Локальный консольный AI-агент на Python 3.11+. Работает с внешним
-[llama-server](https://github.com/ggml-org/llama.cpp) (llama.cpp) по
-OpenAI-совместимому REST API. Это **не веб-приложение**: вся логика — цикл
-«запрос модели → вызовы инструментов → результаты → снова модель» в одном процессе.
+> 🇷🇺 [Русская версия](README_RU.md)
 
-Версия: `0.2.5`.
+A local console AI agent in Python 3.11+. Works with an external
+[llama-server](https://github.com/ggml-org/llama.cpp) (llama.cpp) via an
+OpenAI-compatible REST API. This is **not a web app**: the entire logic is a loop
+of "model request → tool calls → results → model again" in a single process.
 
-## Возможности
+Version: `0.2.5`.
 
-- **Файлы** — чтение, запись, точечное редактирование, листинг, `glob`-поиск и `grep`;
-- **Shell** — запуск команд (`powershell`/`cmd`/`sh`), таймауты, обрезка вывода, подтверждение опасных команд;
-- **Веб** — поиск DuckDuckGo и загрузка страниц с SSRF-защитой;
-- **Память** — постоянные блоки (глобальные и проектные) с приоритетом проекта;
-- **Скиллы** — переиспользуемые инструкции в `SKILL.md`;
-- **Многошаговые задачи** — todo-список и уточняющие вопросы к пользователю;
-- **Нативный tool calling** — модель сама вызывает инструменты через API;
-- **Авто-сжатие истории** при приближении к лимиту контекста;
-- **Два режима** — one-shot (передан промпт) и интерактивный REPL.
+## Features
 
-## Требования
+- **Files** — read, write, inline editing, listing, `glob` search, and `grep`;
+- **Shell** — run commands (`powershell`/`cmd`/`sh`), timeouts, output trimming, confirmation for dangerous commands;
+- **Web** — DuckDuckGo search and page fetching with SSRF protection;
+- **Memory** — persistent blocks (global and project-scoped) with project priority;
+- **Skills** — reusable instructions in `SKILL.md`;
+- **Multi-step tasks** — todo list and clarifying questions to the user;
+- **Native tool calling** — the model invokes tools directly via API;
+- **Automatic history compaction** when approaching the context limit;
+- **Two modes** — one-shot (prompt passed as argument) and interactive REPL.
+
+## Requirements
 
 - Python **3.11+**;
-- запущенный **llama-server** (llama.cpp) с поддержкой OpenAI-совместимого API и tool calling.
+- a running **llama-server** (llama.cpp) with OpenAI-compatible API and tool calling support.
 
-### Вариант 1: из PyPI (рекомендуется)
+### Option 1: from PyPI (recommended)
 
 ```bash
 pip install aisha
 ```
 
-Самый простой способ: пакет устанавливается с https://pypi.org/project/aisha/ вместе со всеми зависимостями, команда `aisha` доступна глобально.
+The simplest way: the package is installed from https://pypi.org/project/aisha/ with all dependencies, the `aisha` command is available globally.
 
-### Вариант 2: из исходников (репозиторий)
+### Option 2: from source (repository)
 
 ```bash
-pip install -e ".[dev]"   # src-layout: без этого пакет `aisha` не импортируется
+pip install -e ".[dev]"   # src-layout: without this the `aisha` package won't import
 ```
 
-Точка входа — `aisha = "aisha.cli:main"` (см. `pyproject.toml`).
+Entry point — `aisha = "aisha.cli:main"` (see `pyproject.toml`).
 
-## Запуск llama-server
+## Running llama-server
 
-Перед использованием нужно поднять сервер, например:
+Before using aisha you need to start the server, e.g.:
 
 ```bash
 llama-server \
@@ -51,74 +53,74 @@ llama-server \
   --n-gpu-layers 99
 ```
 
-По умолчанию aisha ждёт сервер на `http://localhost:8088`. Проверить подключение:
+By default aisha expects the server at `http://localhost:8088`. Check connectivity:
 
 ```bash
 aisha --doctor
 ```
 
-## Быстрый старт
+## Quick Start
 
 ```bash
-aisha "объясни, что делает этот проект"   # one-shot: один запрос и выход
-aisha                                       # без аргументов — интерактивный REPL
-python -m aisha ...                         # эквивалентный вызов
+aisha "explain what this project does"   # one-shot: single request and exit
+aisha                                    # no arguments — interactive REPL
+python -m aisha ...                      # equivalent entry point
 ```
 
 ## CLI
 
 ```
-aisha [промпт...] [флаги]
+aisha [prompt...] [flags]
 ```
 
-| Флаг | Описание |
+| Flag | Description |
 |---|---|
-| `prompt` (позиционный) | запрос; без него запускается REPL |
-| `--server URL` | адрес llama-server (по умолч. `http://localhost:8088`) |
-| `--model NAME` | имя модели на сервере |
-| `--api-key KEY` | API-ключ для сервера (если требуется авторизация) |
-| `--skip-health` | пропустить проверку `/health` (для несовместимых серверов) |
-| `-r`, `--read-only` | режим только для чтения (только безопасные инструменты) |
-| `--permission auto\|ask\|deny` | режим запуска shell-команд |
-| `--shell powershell\|cmd` | оболочка по умолчанию |
-| `--tools-only` | показать список инструментов и выйти |
-| `--doctor` | диагностика подключения к серверу |
-| `--tool-call-test` | вместе с `--doctor`: проверить tool calling |
-| `--no-color` | отключить цвета |
-| `--debug` | режим отладки: reasoning модели, дампы запросов/ответов, traceback |
-| `--version` | показать версию |
+| `prompt` (positional) | query; without it REPL starts |
+| `--server URL` | llama-server address (default `http://localhost:8088`) |
+| `--model NAME` | model name on the server |
+| `--api-key KEY` | API key for the server (if auth is required) |
+| `--skip-health` | skip `/health` check (for incompatible servers) |
+| `-r`, `--read-only` | read-only mode (safe tools only) |
+| `--permission auto\|ask\|deny` | shell command execution mode |
+| `--shell powershell\|cmd` | default shell |
+| `--tools-only` | list tools and exit |
+| `--doctor` | diagnose server connection |
+| `--tool-call-test` | together with `--doctor`: test tool calling |
+| `--no-color` | disable colors |
+| `--debug` | debug mode: model reasoning, request/response dumps, tracebacks |
+| `--version` | show version |
 
-## Конфигурация
+## Configuration
 
-Приоритет (каждый слой глубоко сливается с предыдущим):
+Priority (each layer deep-merges with the previous):
 
 ```
-DEFAULTS  ←  ~/.aisha/config.toml  ←  <workspace>/aisha.toml  ←  env AISHA_*  ←  CLI-флаги
+DEFAULTS  ←  ~/.aisha/config.toml  ←  <workspace>/aisha.toml  ←  env AISHA_*  ←  CLI flags
 ```
 
-Полный пример `~/.aisha/config.toml`:
+Full example of `~/.aisha/config.toml`:
 
 ```toml
 [server]
 base_url = "http://localhost:8088"
 model = "Qwen3.5-9B-Q4_K_XL"
-api_key = ""                  # необязательно; если сервер требует авторизацию (Bearer)
-skip_health = false           # true — пропустить проверку /health (для OpenRouter, vLLM и т.д.)
+api_key = ""                  # optional; if server requires auth (Bearer)
+skip_health = false           # true — skip /health check (for OpenRouter, vLLM, etc.)
 connect_timeout = 5.0
 request_timeout = 600.0
 
 [llm]
 temperature = 0.6
-top_p = 0.9                 # необязательно; None = не передавать (используется серверный умолчание)
-top_k = 40                  # необязательно; целое > 0
-repeat_penalty = 1.1        # необязательно; > 0
-frequency_penalty = 0.0     # необязательно; -2.0 .. 2.0
+top_p = 0.9                 # optional; None = don't pass (server default used)
+top_k = 40                  # optional; integer > 0
+repeat_penalty = 1.1        # optional; > 0
+frequency_penalty = 0.0     # optional; -2.0 .. 2.0
 max_output_tokens = 32768
 context_window = 32768
 context_soft_limit = 0.85
 max_tool_iterations = 25
-tool_guide = false           # true — добавить «Справочник инструментов» в системный промпт (для слабых моделей)
-communication_language = "Russian"  # язык общения агента с пользователем
+tool_guide = false           # true — add "Tool Guide" to system prompt (for weak models)
+communication_language = "Russian"  # agent's response language
 
 [tools]
 shell = true
@@ -145,13 +147,13 @@ max_block_chars = 30000
 theme = "dark"
 stream = true
 show_reasoning = false
-debug = false                 # true — то же, что --debug: reasoning + дампы запросов/ответов
+debug = false                 # true — same as --debug: reasoning + request/response dumps
 input_history = "~/.aisha/input_history.txt"
 ```
 
-Переменные окружения:
+Environment variables:
 
-| Переменная | Куда |
+| Variable | Maps to |
 |---|---|
 | `AISHA_SERVER_URL` | `server.base_url` |
 | `AISHA_MODEL` | `server.model` |
@@ -162,108 +164,108 @@ input_history = "~/.aisha/input_history.txt"
 | `AISHA_CONTEXT_WINDOW` | `llm.context_window` |
 | `AISHA_MAX_OUTPUT_TOKENS` | `llm.max_output_tokens` |
 
-Конфиг строго валидируется: неизвестная секция или ключ вызывает ошибку.
-**Проектный `aisha.toml` ограничен в правах безопасности** — он не может ставить
-`permission = "auto"`, включать доступ за пределы workspace или включать `shell`,
-если тот отключён глобально. Это защита от «троянского» конфига в склонированном репозитории.
+Config is strictly validated: unknown section or key raises an error.
+**Project-level `aisha.toml` is restricted by security rules** — it cannot set
+`permission = "auto"`, enable access outside the workspace, or enable `shell`
+if it was disabled globally. This protects against a "trojan" config in a cloned repo.
 
-## Инструменты
+## Tools
 
-| Инструмент | Read-only | Назначение |
+| Tool | Read-only | Purpose |
 |---|---|---|
-| `read_file` | да | чтение файла UTF-8 с offset/limit |
-| `write_file` | нет | создание/перезапись (атомарно) |
-| `edit_file` | нет | точная замена фрагмента текста |
-| `list_dir` | да | содержимое каталога |
-| `glob` | да | поиск файлов по маске |
-| `grep` | да | regex-поиск по содержимому |
-| `run_command` | нет | запуск shell-команды |
-| `web_search` | да | поиск DuckDuckGo |
-| `web_fetch` | да | загрузка веб-страницы |
-| `todowrite` | да | полная замена todo-списка сессии |
-| `ask_user` | да | уточняющий вопрос (только в REPL) |
-| `memory_list` / `memory_get` | да | список/чтение блоков памяти |
-| `memory_set` / `memory_replace` | нет | запись/правка блоков памяти |
-| `skill` | да | загрузить текст скилла по имени |
+| `read_file` | yes | read UTF-8 file with offset/limit |
+| `write_file` | no | create/overwrite (atomic) |
+| `edit_file` | no | precise text fragment replacement |
+| `list_dir` | yes | directory listing |
+| `glob` | yes | file search by pattern |
+| `grep` | yes | regex content search |
+| `run_command` | no | run shell command |
+| `web_search` | yes | DuckDuckGo search |
+| `web_fetch` | yes | fetch web page |
+| `todowrite` | yes | full replacement of session todo list |
+| `ask_user` | yes | clarifying question (REPL only) |
+| `memory_list` / `memory_get` | yes | list/read memory blocks |
+| `memory_set` / `memory_replace` | no | write/edit memory blocks |
+| `skill` | yes | load skill text by name |
 
-Файловые инструменты не выходят за пределы workspace (path-traversal блокируется),
-если не включён соответствующий `allow_*_outside_workspace`.
+File tools do not escape the workspace (path traversal is blocked)
+unless the corresponding `allow_*_outside_workspace` is enabled.
 
-## Память и скиллы
+## Memory and Skills
 
-- **Память** — JSON-блоки в `~/.aisha/memory/` (глобально) и `<workspace>/.aisha/memory/`
-  (проектно). Проектный блок перекрывает глобальный с тем же `label`.
-  Вызов `memory_get` не выводится в консоль (это фоновое чтение собственной памяти агента).
-- **Скиллы** — каталоги `~/.aisha/skills/<name>/SKILL.md` и
-  `<workspace>/.aisha/skills/<name>/SKILL.md` с обязательным YAML-frontmatter
+- **Memory** — JSON blocks in `~/.aisha/memory/` (global) and `<workspace>/.aisha/memory/`
+  (project-scoped). Project block overrides global with the same `label`.
+  `memory_get` call is not displayed in console (it's a background read of the agent's own memory).
+- **Skills** — directories `~/.aisha/skills/<name>/SKILL.md` and
+  `<workspace>/.aisha/skills/<name>/SKILL.md` with required YAML frontmatter
   (`name`, `description`).
 
-## Кастомный системный промпт (SYSTEM.md)
+## Custom System Prompt (SYSTEM.md)
 
-Если в корне проекта есть файл `<workspace>/.aisha/SYSTEM.md`, его содержимое
-**полностью заменяет** встроенный системный промпт aisha (persona, окружение, правила,
-секции памяти и скиллов). При этом «Справочник инструментов» (`tool_guide = true`),
-`AGENTS.md` и текущий todo-список по-прежнему добавляются после него. Файл обрезается
-до 64 КБ, как и `AGENTS.md`.
+If a file `<workspace>/.aisha/SYSTEM.md` exists in the project root, its content
+**completely replaces** the built-in aisha system prompt (persona, environment, rules,
+memory and skill sections). The "Tool Guide" (`tool_guide = true`), `AGENTS.md`,
+and the current todo list are still appended after it. The file is truncated
+to 64 KB, same as `AGENTS.md`.
 
 ## REPL
 
-Команды внутри интерактивного режима:
+Commands inside interactive mode:
 
-| Команда | Действие |
+| Command | Action |
 |---|---|
-| `/help` | справка |
-| `/new` | новая сессия (сброс истории) |
-| `/status` | сервер, модель, workspace, режим, токены |
-| `/tools` | список инструментов |
-| `/skills` | индекс скиллов |
-| `/memory` | блоки памяти |
-| `/compact` | принудительное сжатие истории |
-| `/doctor` | проверка соединения |
-| `/init` | изучить проект и создать `AGENTS.md` |
-| `/clear` | очистка экрана |
-| `/quit`, `/exit`, `Ctrl+D` | выход |
+| `/help` | help |
+| `/new` | new session (reset history) |
+| `/status` | server, model, workspace, mode, tokens |
+| `/tools` | tool list |
+| `/skills` | skill index |
+| `/memory` | memory blocks |
+| `/compact` | force history compaction |
+| `/doctor` | connection check |
+| `/init` | explore project and create `AGENTS.md` |
+| `/clear` | clear screen |
+| `/quit`, `/exit`, `Ctrl+D` | exit |
 
-Дополнительно: `Ctrl+C` отменяет текущий запрос (REPL не завершается),
-`Ctrl+↑/↓` — история запросов, `Tab` — автодополнение команд и путей.
+Additionally: `Ctrl+C` cancels the current request (REPL does not exit),
+`Ctrl+↑/↓` — request history, `Tab` — command and path autocompletion.
 
-## Безопасность
+## Security
 
-- Запуск shell-команд в режиме `permission = "ask"` требует подтверждения;
-  опасные команды (`rm -rf`, `Remove-Item -Recurse`, `git reset --hard` и т.п.)
-  подтверждаются всегда.
-- `web_fetch` блокирует private/localhost/loopback-адреса (SSRF-защита), если не
-  включён `web.allow_private_hosts`.
-- `find_danger` в `shell.py` — **эвристика по regex, а не песочница**: обойти её можно.
-  Не запускайте aisha от имени пользователя с повышенными правами в недоверенном окружении.
+- Shell commands in `permission = "ask"` mode require confirmation;
+  dangerous commands (`rm -rf`, `Remove-Item -Recurse`, `git reset --hard`, etc.)
+  always require confirmation.
+- `web_fetch` blocks private/localhost/loopback addresses (SSRF protection) unless
+  `web.allow_private_hosts` is enabled.
+- `find_danger` in `shell.py` is a **heuristic regex check, not a sandbox**: it can be bypassed.
+  Do not run aisha as a privileged user in an untrusted environment.
 
-## Разработка
+## Development
 
 ```bash
 pip install -e ".[dev]"
 
-pytest                        # весь набор; реальный сервер не нужен
-pytest tests/test_config.py   # один тест
+pytest                        # full suite; real server not needed
+pytest tests/test_config.py   # single test
 
-ruff check .                  # линт (E, F, I, W; line-length 100)
+ruff check .                  # lint (E, F, I, W; line-length 100)
 ```
 
-Тесты не ходят в реальный сервер: `test_client.py` подменяет транспорт
-`httpx.MockTransport`, конфиг-тесты подменяют `Path.home`.
+Tests do not hit a real server: `test_client.py` uses `httpx.MockTransport`,
+config tests use `monkeypatch.setattr(Path, "home", ...)`.
 
-## Структура проекта
+## Project Structure
 
 ```
 src/aisha/
 ├── cli.py        # entry point: args → config → registry → client → AgentLoop → UI
-├── client.py     # async SSE-клиент к llama-server, ретраи, tool-call сборка
-├── agent.py      # AgentLoop: цикл модель↔инструменты, компакция
-├── context.py    # системный промпт, история, оценка токенов
-├── config.py     # конфигурация, валидация, безопасность
-├── memory.py     # постоянная память (блоки)
-├── skills.py     # скиллы (SKILL.md)
+├── client.py     # async SSE client to llama-server, retries, tool-call assembly
+├── agent.py      # AgentLoop: model↔tools loop, compaction
+├── context.py    # system prompt, history, token estimation
+├── config.py     # configuration, validation, security
+├── memory.py     # persistent memory (blocks)
+├── skills.py     # skills (SKILL.md)
 ├── ui.py         # ConsoleUI: rich + prompt_toolkit, REPL
-├── fsutil.py     # атомарная запись, проверка путей, human_size
-├── errors.py     # иерархия исключений
-└── tools/        # реализации инструментов (base, files, shell, web, extras)
+├── fsutil.py     # atomic write, path checks, human_size
+├── errors.py     # exception hierarchy
+└── tools/        # tool implementations (base, files, shell, web, extras)
 ```
