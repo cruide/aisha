@@ -138,3 +138,50 @@ def test_sampling_validation(tmp_path: Path, monkeypatch, key, value):
     with pytest.raises(ConfigurationError, match=key):
         load_config(ws, env={})
 
+
+def test_skip_health_default_false(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
+    cfg = load_config(tmp_path / "ws", env={})
+    assert cfg.server.skip_health is False
+
+
+def test_skip_health_from_project_toml(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    (ws / "aisha.toml").write_text("[server]\nskip_health = true\n")
+    cfg = load_config(ws, env={})
+    assert cfg.server.skip_health is True
+
+
+def test_skip_health_from_global_toml(tmp_path: Path, monkeypatch):
+    home = tmp_path / "home"
+    (home / ".aisha").mkdir(parents=True)
+    (home / ".aisha" / "config.toml").write_text("[server]\nskip_health = true\n")
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: home))
+    cfg = load_config(tmp_path / "ws", env={})
+    assert cfg.server.skip_health is True
+
+
+def test_skip_health_from_env(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
+    cfg = load_config(tmp_path / "ws", env={"AISHA_SKIP_HEALTH": "true"})
+    assert cfg.server.skip_health is True
+    cfg = load_config(tmp_path / "ws", env={"AISHA_SKIP_HEALTH": "false"})
+    assert cfg.server.skip_health is False
+
+
+def test_skip_health_from_cli(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
+    cfg = load_config(tmp_path / "ws", env={}, cli={"server": {"skip_health": True}})
+    assert cfg.server.skip_health is True
+
+
+def test_skip_health_must_be_bool(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    (ws / "aisha.toml").write_text('[server]\nskip_health = "yes"\n')
+    with pytest.raises(ConfigurationError, match="skip_health"):
+        load_config(ws, env={})
+

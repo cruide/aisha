@@ -5,7 +5,7 @@
 OpenAI-совместимому REST API. Это **не веб-приложение**: вся логика — цикл
 «запрос модели → вызовы инструментов → результаты → снова модель» в одном процессе.
 
-Версия: `0.2.3`.
+Версия: `0.2.2`.
 
 ## Возможности
 
@@ -26,16 +26,8 @@ OpenAI-совместимому REST API. Это **не веб-приложен�
 
 ## Установка
 
-Из PyPI (рекомендуется):
-
 ```bash
-pip install aisha
-```
-
-Для разработки из исходников (src-layout):
-
-```bash
-pip install -e ".[dev]"   # editable-установка: изменения в src/ сразу подхватываются
+pip install -e ".[dev]"   # src-layout: без этого пакет `aisha` не импортируется
 ```
 
 Точка входа — `aisha = "aisha.cli:main"` (см. `pyproject.toml`).
@@ -77,6 +69,7 @@ aisha [промпт...] [флаги]
 | `--server URL` | адрес llama-server (по умолч. `http://localhost:8088`) |
 | `--model NAME` | имя модели на сервере |
 | `--api-key KEY` | API-ключ для сервера (если требуется авторизация) |
+| `--skip-health` | пропустить проверку `/health` (для несовместимых серверов) |
 | `-r`, `--read-only` | режим только для чтения (только безопасные инструменты) |
 | `--permission auto\|ask\|deny` | режим запуска shell-команд |
 | `--shell powershell\|cmd` | оболочка по умолчанию |
@@ -102,6 +95,7 @@ DEFAULTS  ←  ~/.aisha/config.toml  ←  <workspace>/aisha.toml  ←  env AISHA
 base_url = "http://localhost:8088"
 model = "Qwen3.5-9B-Q4_K_XL"
 api_key = ""                  # необязательно; если сервер требует авторизацию (Bearer)
+skip_health = false           # true — пропустить проверку /health (для OpenRouter, vLLM и т.д.)
 connect_timeout = 5.0
 request_timeout = 600.0
 
@@ -153,6 +147,7 @@ input_history = "~/.aisha/input_history.txt"
 | `AISHA_SERVER_URL` | `server.base_url` |
 | `AISHA_MODEL` | `server.model` |
 | `AISHA_API_KEY` | `server.api_key` |
+| `AISHA_SKIP_HEALTH` | `server.skip_health` (`true`/`false`) |
 | `AISHA_PERMISSION` | `tools.permission` |
 | `AISHA_SHELL` | `tools.shell_type` |
 | `AISHA_CONTEXT_WINDOW` | `llm.context_window` |

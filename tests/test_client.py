@@ -114,3 +114,50 @@ async def test_no_sampling_by_default():
     payload = captured["payload"]
     assert "top_p" not in payload and "top_k" not in payload
     assert "repeat_penalty" not in payload and "frequency_penalty" not in payload
+
+
+async def test_health_returns_none_on_html():
+    def handler(request):
+        if request.url.path == "/health":
+            return httpx.Response(200, text="<html><body>Not Found</body></html>")
+        return httpx.Response(200, json={"data": [{"id": "m", "meta": {}}]})
+
+    client = make_client(handler)
+    assert await client.health() is None
+
+
+async def test_health_returns_none_on_non_200():
+    def handler(request):
+        if request.url.path == "/health":
+            return httpx.Response(404, text="not found")
+        return httpx.Response(200, json={"data": [{"id": "m", "meta": {}}]})
+
+    client = make_client(handler)
+    assert await client.health() is None
+
+
+async def test_health_skip_returns_none():
+    def handler(request):
+        return httpx.Response(200, json={"status": "ok"})
+
+    client = make_client(handler)
+    client.skip_health = True
+    assert await client.health() is None
+
+
+async def test_health_still_raises_on_connection_error():
+    def handler(request):
+        raise httpx.ConnectError("refused")
+
+    client = make_client(handler)
+    with pytest.raises(ServerUnavailableError):
+        await client.health()
+
+
+async def test_health_still_raises_on_503():
+    def handler(request):
+        return httpx.Response(503)
+
+    client = make_client(handler)
+    with pytest.raises(ServerUnavailableError):
+        await client.health()

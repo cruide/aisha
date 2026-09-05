@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "aisha"
-version = "0.2.3"
+version = "0.2.2"
 authors = [
     {name = "Tischenko Alexander", email = "info@alex-tisch.ru"},
 ]
@@ -44,9 +44,6 @@ aisha = "aisha.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/aisha"]
-
-[tool.hatch.build.targets.sdist]
-exclude = ["/dist"]
 
 [tool.ruff]
 line-length = 100

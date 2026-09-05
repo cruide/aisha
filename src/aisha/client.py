@@ -74,6 +74,7 @@ class LlamaClient:
         model: str,
         *,
         api_key: str = "",
+        skip_health: bool = False,
         connect_timeout: float = 5.0,
         request_timeout: float = 600.0,
     ) -> None:
@@ -86,12 +87,21 @@ class LlamaClient:
             headers=headers,
         )
         self._stream_options_ok = True
+        self.skip_health = skip_health
 
     async def close(self) -> None:
         await self._http.aclose()
 
     # ----------------------------------------------------------------- probes
-    async def health(self) -> dict[str, Any]:
+    async def health(self) -> dict[str, Any] | None:
+        """Check server health. Returns dict on success, None on soft failure.
+
+        When skip_health is set or the server responds with non-JSON (e.g. HTML),
+        returns None instead of raising — the caller should proceed to /v1/models.
+        Only raises on hard failures (connection refused, 503).
+        """
+        if self.skip_health:
+            return None
         try:
             resp = await self._http.get("/health")
         except httpx.HTTPError as exc:
@@ -99,11 +109,11 @@ class LlamaClient:
         if resp.status_code == 503:
             raise ServerUnavailableError("Сервер отвечает 503: модель ещё загружается")
         if resp.status_code != 200:
-            raise ServerUnavailableError(f"/health вернул HTTP {resp.status_code}")
+            return None
         try:
             return resp.json()
-        except ValueError as exc:
-            raise ProtocolError("/health вернул не JSON") from exc
+        except ValueError:
+            return None
 
     async def model_info(self) -> dict[str, dict[str, Any]]:
         """Return {model_id: meta} parsed from /v1/models."""

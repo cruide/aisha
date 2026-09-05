@@ -21,6 +21,7 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "base_url": "http://localhost:8088",
         "model": "Qwen3.5-9B-Q4_K_XL",
         "api_key": "",
+        "skip_health": False,
         "connect_timeout": 5.0,
         "request_timeout": 600.0,
     },
@@ -63,10 +64,19 @@ DEFAULTS: dict[str, dict[str, Any]] = {
     },
 }
 
-ENV_VARS: dict[str, tuple[str, str, type]] = {
+def _parse_bool(raw: str) -> bool:
+    if raw.lower() in ("true", "1", "yes"):
+        return True
+    if raw.lower() in ("false", "0", "no"):
+        return False
+    raise ValueError(f"ожидается true/false, получено {raw!r}")
+
+
+ENV_VARS: dict[str, tuple[str, str, type] | tuple[str, str, Any]] = {
     "AISHA_SERVER_URL": ("server", "base_url", str),
     "AISHA_MODEL": ("server", "model", str),
     "AISHA_API_KEY": ("server", "api_key", str),
+    "AISHA_SKIP_HEALTH": ("server", "skip_health", _parse_bool),
     "AISHA_PERMISSION": ("tools", "permission", str),
     "AISHA_SHELL": ("tools", "shell_type", str),
     "AISHA_CONTEXT_WINDOW": ("llm", "context_window", int),
@@ -79,6 +89,7 @@ class ServerConfig:
     base_url: str
     model: str
     api_key: str
+    skip_health: bool
     connect_timeout: float
     request_timeout: float
 
@@ -262,6 +273,7 @@ def _validate(data: dict[str, Any], source: str) -> None:
         positive("web", key)
     positive("memory", "max_block_chars")
     bool_keys = (
+        ("server", "skip_health"),
         ("tools", "shell"), ("tools", "web_search"),
         ("tools", "allow_read_outside_workspace"), ("tools", "allow_write_outside_workspace"),
         ("web", "allow_private_hosts"), ("memory", "enabled"),
