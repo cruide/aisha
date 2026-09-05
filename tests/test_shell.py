@@ -28,8 +28,8 @@ def test_truncate_keeps_head_and_tail():
 @pytest.mark.skipif(os.name != "nt", reason="Windows only")
 async def test_run_powershell_auto(ctx):
     ctx.config.tools.permission = "auto"
-    r = await RunCommandTool().run({"command": "Write-Output 'привет'"}, ctx)
-    assert r.ok and r.data["exit_code"] == 0 and "привет" in r.data["stdout"]
+    r = await RunCommandTool().run({"command": "Write-Output 'hello'"}, ctx)
+    assert r.ok and r.data["exit_code"] == 0 and "hello" in r.data["stdout"]
 
 
 async def test_ask_mode_without_confirm_fn_is_denied(ctx):

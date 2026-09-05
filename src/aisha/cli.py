@@ -42,23 +42,23 @@ from aisha.ui import ConsoleUI
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="aisha", description="Локальный консольный AI-агент.")
-    p.add_argument("prompt", nargs="*", help="одноразовый запрос (без него — REPL)")
-    p.add_argument("--server", help="URL llama-server, например http://localhost:8088")
-    p.add_argument("--model", help="имя модели (alias -a на сервере)")
-    p.add_argument("--api-key", help="API-ключ для сервера (если требуется авторизация)")
+    p = argparse.ArgumentParser(prog="aisha", description="Local console AI agent.")
+    p.add_argument("prompt", nargs="*", help="one-shot query (without it — REPL)")
+    p.add_argument("--server", help="llama-server URL, e.g. http://localhost:8088")
+    p.add_argument("--model", help="model name (alias -a on the server)")
+    p.add_argument("--api-key", help="API key for the server (if authentication is required)")
     p.add_argument("--skip-health", action="store_true",
-                   help="пропустить проверку /health (для несовместимых серверов)")
-    p.add_argument("-r", "--read-only", action="store_true", help="режим только для чтения")
-    p.add_argument("--permission", choices=("auto", "ask", "deny"), help="режим shell")
-    p.add_argument("--shell", choices=("powershell", "cmd"), help="оболочка по умолчанию")
-    p.add_argument("--tools-only", action="store_true", help="показать инструменты и выйти")
-    p.add_argument("--doctor", action="store_true", help="диагностика подключения")
+                   help="skip /health check (for incompatible servers)")
+    p.add_argument("-r", "--read-only", action="store_true", help="read-only mode")
+    p.add_argument("--permission", choices=("auto", "ask", "deny"), help="shell permission mode")
+    p.add_argument("--shell", choices=("powershell", "cmd"), help="default shell")
+    p.add_argument("--tools-only", action="store_true", help="print tools and exit")
+    p.add_argument("--doctor", action="store_true", help="connection diagnostics")
     p.add_argument("--tool-call-test", action="store_true",
-                   help="с --doctor: проверить tool calling")
-    p.add_argument("--no-color", action="store_true", help="отключить цвета")
+                   help="with --doctor: test tool calling")
+    p.add_argument("--no-color", action="store_true", help="disable colours")
     p.add_argument("--debug", action="store_true",
-                   help="режим отладки: reasoning модели, дампы запросов/ответов, traceback")
+                   help="debug mode: model reasoning, request/response dumps, traceback")
     p.add_argument("--version", action="version", version=f"aisha {__version__}")
     return p
 
@@ -112,24 +112,24 @@ async def run_doctor(config: Config, client: LlamaClient, ui: ConsoleUI,
         mark = "[green]✓[/]" if ok else ("[yellow]⚠[/]" if warn else "[red]✗[/]")
         ui.console.print(f"  {mark} {label}" + (f" [dim]— {detail}[/]" if detail else ""))
 
-    ui.console.print(f"[bold]Диагностика[/] {config.server.base_url}")
+    ui.console.print(f"[bold]Diagnostics[/] {config.server.base_url}")
     if config.server.skip_health:
-        report(True, "/health", "пропущена (--skip-health)", warn=True)
+        report(True, "/health", "skipped (--skip-health)", warn=True)
     else:
         try:
             health = await client.health()
             if health is not None:
                 report(True, "/health", str(health.get("status", "ok")))
             else:
-                report(True, "/health", "не JSON — пропущена", warn=True)
+                report(True, "/health", "non-JSON — skipped", warn=True)
         except AishaError as exc:
             report(False, "/health", str(exc))
-            ui.info("Проверьте, что llama-server запущен (команда — в README.md).")
+            ui.info("Check that llama-server is running (see README.md for the command).")
             return False
     try:
         info = await client.model_info()
         names = list(info)
-        report(bool(names), "/v1/models", ", ".join(names) or "пусто")
+        report(bool(names), "/v1/models", ", ".join(names) or "empty")
         if not names:
             return False
         if client.model in info:
@@ -137,35 +137,35 @@ async def run_doctor(config: Config, client: LlamaClient, ui: ConsoleUI,
         else:
             model, matched = names[0], False
             client.model = model
-        report(matched, "модель", model if matched else
-               f"'{config.server.model}' не найдена, используется '{model}'", warn=True)
+        report(matched, "model", model if matched else
+               f"'{config.server.model}' not found, using '{model}'", warn=True)
     except AishaError as exc:
         report(False, "/v1/models", str(exc))
         return False
     try:
-        resp = await client.chat([{"role": "user", "content": "Ответь одним словом: ok"}],
+        resp = await client.chat([{"role": "user", "content": "Reply with one word: ok"}],
                                  None, temperature=0.0, max_tokens=64)
         report(bool(resp.content.strip()), "/v1/chat/completions",
-               f"ответ: {resp.content.strip()[:40]!r}, usage: {'есть' if resp.usage else 'нет'}")
+               f"response: {resp.content.strip()[:40]!r}, usage: {'yes' if resp.usage else 'no'}")
     except AishaError as exc:
         report(False, "/v1/chat/completions", str(exc))
     if tool_call_test:
         echo = {"type": "function", "function": {
-            "name": "echo", "description": "Вернуть переданный текст без изменений",
+            "name": "echo", "description": "Return the passed text unchanged",
             "parameters": {"type": "object", "properties": {"text": {"type": "string"}},
                            "required": ["text"]}}}
         try:
             resp = await client.chat(
-                [{"role": "user", "content": "Вызови инструмент echo с текстом 'ping'."}],
+                [{"role": "user", "content": "Call the echo tool with text 'ping'."}],
                 [echo], temperature=0.0, max_tokens=1024,
             )
             calls = [f"{c.name}({c.arguments})" for c in resp.tool_calls]
             report(any(c.name == "echo" for c in resp.tool_calls), "tool calling",
-                   ", ".join(calls) or f"инструмент не вызван: {resp.content[:60]!r}")
+                   ", ".join(calls) or f"tool not called: {resp.content[:60]!r}")
         except AishaError as exc:
             report(False, "tool calling", str(exc))
-    ui.console.print("[green]Готово: всё в порядке.[/]" if ok_all else
-                     "[red]Обнаружены проблемы.[/]")
+    ui.console.print("[green]Done: everything looks good.[/]" if ok_all else
+                     "[red]Issues detected.[/]")
     return ok_all
 
 
@@ -176,7 +176,7 @@ async def _amain(args: argparse.Namespace) -> int:
     try:
         config = load_config(workspace, cli=cli_overrides(args), read_only=args.read_only)
     except ConfigurationError as exc:
-        ui.error(f"Ошибка конфигурации: {exc}")
+        ui.error(f"Configuration error: {exc}")
         return 2
 
     registry = build_registry(config)
@@ -196,13 +196,13 @@ async def _amain(args: argparse.Namespace) -> int:
             model, matched, n_ctx = await client.resolve_model_meta()
         except AishaError as exc:
             ui.error(str(exc), exc)
-            ui.info("Подсказка: aisha --doctor покажет подробности; сервер должен слушать "
+            ui.info("Hint: run 'aisha --doctor' for details; the server should be listening at "
                     f"{config.server.base_url}.")
             return 1
 
         # if not matched:
-        #     ui.warn(f"Модель '{config.server.model}' не найдена на сервере, "
-        #             f"используется '{model}'.")
+        #     ui.warn(f"Model '{config.server.model}' not found on server, "
+        #             f"using '{model}'.")
 
         if n_ctx:
             config.llm.context_window = n_ctx

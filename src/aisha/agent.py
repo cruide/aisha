@@ -19,12 +19,12 @@ PARALLEL_TOOLS = frozenset({
 })
 
 SUMMARY_SYSTEM = (
-    "Ты сжимаешь историю диалога AI-агента для программиста. Составь структурированную сводку "
-    "на русском: 1) цель пользователя; 2) что уже сделано (файлы, команды, результаты); "
-    "3) важные факты и решения; 4) незавершённые задачи и следующие шаги. Без воды, без "
-    "инструментов, только текст."
+    "You are compressing the conversation history of an AI agent for a developer. "
+    "Produce a structured summary: 1) user goal; 2) what was done (files, commands, results); "
+    "3) important facts and decisions; 4) unfinished tasks and next steps. No fluff, no "
+    "tool calls, plain text only."
 )
-SUMMARY_REQUEST = "Сделай сводку диалога выше по указанной структуре."
+SUMMARY_REQUEST = "Summarise the conversation above following the structure described."
 
 
 class AgentEvents(Protocol):
@@ -62,7 +62,7 @@ class AgentLoop:
             return await self._run_turn()
         except BaseException:
             # Keep history valid if we were interrupted between tool_calls and results.
-            self.context.close_dangling_tool_calls("Операция прервана пользователем.")
+            self.context.close_dangling_tool_calls("Operation interrupted by user.")
             raise
 
     async def _run_turn(self) -> str:
@@ -76,8 +76,8 @@ class AgentLoop:
                 if self.context.needs_compaction():
                     skip_compact = True
                     self.events.on_notice(
-                        "Сжатие не освободило достаточно контекста; "
-                        "продолжаю без повторной попытки.",
+                        "Compaction did not free enough context; "
+                        "continuing without retrying.",
                         "warn",
                     )
             tools = None if limit_hit else self.registry.schemas(read_only=self.config.read_only)
@@ -86,28 +86,30 @@ class AgentLoop:
             if response.finish_reason == "length":
                 if response.tool_calls:
                     self.events.on_notice(
-                        "Ответ обрезан: достигнут лимит max_output_tokens; вызовы инструментов "
-                        "могут быть неполными.", "warn",
+                        "Response truncated: max_output_tokens limit reached; tool calls "
+                        "may be incomplete.", "warn",
                     )
                 else:
                     self.events.on_notice(
-                        "Ответ обрезан: достигнут лимит max_output_tokens.", "warn",
+                        "Response truncated: max_output_tokens limit reached.", "warn",
                     )
             if not response.tool_calls:
                 return response.content
             if limit_hit:
-                self._refuse_calls(response.tool_calls, "Инструменты недоступны: лимит исчерпан.")
+                self._refuse_calls(
+                    response.tool_calls, "Tools unavailable: iteration limit reached."
+                )
                 return response.content
             iterations += 1
             if iterations > llm.max_tool_iterations:
                 self.events.on_notice(
-                    f"Достигнут лимит итераций инструментов ({llm.max_tool_iterations}); "
-                    "запрашиваю итоговый ответ.", "warn",
+                    f"Tool iteration limit reached ({llm.max_tool_iterations}); "
+                    "requesting final answer.", "warn",
                 )
                 self._refuse_calls(
                     response.tool_calls,
-                    "Лимит итераций инструментов исчерпан. Сформируй итоговый ответ для "
-                    "пользователя без новых вызовов инструментов.",
+                    "Tool iteration limit reached. Provide a final answer to "
+                    "the user without new tool calls.",
                 )
                 limit_hit = True
                 continue
@@ -165,7 +167,7 @@ class AgentLoop:
         return text if len(text) <= limit else text[:limit] + "…"
 
     def _format_request(self, messages: list[dict[str, Any]], est_tokens: int) -> str:
-        lines = [f"сообщений: {len(messages)}, ~{est_tokens} токенов"]
+        lines = [f"messages: {len(messages)}, ~{est_tokens} tokens"]
         for m in messages:
             role = m.get("role")
             if m.get("tool_calls"):
@@ -190,7 +192,7 @@ class AgentLoop:
             parts.append(f"finish_reason: {response.finish_reason}")
         if response.usage:
             parts.append(f"usage: {response.usage}")
-        return "\n".join(parts) or "(пусто)"
+        return "\n".join(parts) or "(empty)"
 
     # ----------------------------------------------------------------- tools
     async def _execute_calls(self, calls: list[ToolCall], *, truncated: bool = False) -> None:
@@ -214,12 +216,12 @@ class AgentLoop:
         except ValueError as exc:
             if not silent:
                 self.events.on_tool_start(call, None)
-            message = f"Некорректный JSON аргументов: {exc}"
+            message = f"Invalid arguments JSON: {exc}"
             if truncated:
                 message += (
-                    ". Вывод модели был обрезан по лимиту токенов (max_tokens). Разбей "
-                    "содержимое на меньшие части и повтори: скелет через write_file, затем "
-                    "дополняй edit_file или отдельными write_file."
+                    ". Model output was truncated by the max_tokens limit. Break "
+                    "the content into smaller parts and retry: skeleton via write_file, then "
+                    "extend with edit_file or additional write_file calls."
                 )
             result = ToolResult.failure("ToolValidationError", message)
         else:
@@ -237,11 +239,11 @@ class AgentLoop:
         blocks = self.context.turn_blocks()
         if len(blocks) < 2:
             if force:
-                self.events.on_notice("История слишком короткая, сжимать нечего.")
+                self.events.on_notice("History is too short, nothing to compact.")
             return False
         old = [m for block in blocks[:-1] for m in block]
         keep = blocks[-1]
-        self.events.on_notice("Сжимаю историю диалога…")
+        self.events.on_notice("Compacting conversation history…")
         summary: str | None = None
         try:
             response = await self.client.chat(
@@ -251,9 +253,9 @@ class AgentLoop:
             )
             summary = response.content.strip() or None
         except AishaError as exc:
-            self.events.on_notice(f"Сводка не удалась ({exc}); старые сообщения удалены.", "warn")
+            self.events.on_notice(f"Summary failed ({exc}); old messages removed.", "warn")
         self.context.replace_history(summary, keep)
         self.events.on_notice(
-            f"История сжата: {len(old)} сообщений → {'сводка' if summary else 'удалены'}."
+            f"History compacted: {len(old)} messages → {'summary' if summary else 'removed'}."
         )
         return True

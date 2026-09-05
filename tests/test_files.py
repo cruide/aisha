@@ -5,7 +5,7 @@ from aisha.tools.files import EditFileTool, GlobTool, GrepTool, ReadFileTool, Wr
 async def test_write_read_edit(ctx):
     (ctx.workspace / "src").mkdir()
     r = await WriteFileTool().run({"path": "src/a.py", "content": "x = 1\ny = 2\n"}, ctx)
-    assert r.ok and r.data["action"] == "создан"
+    assert r.ok and r.data["action"] == "created"
     r = await ReadFileTool().run({"path": "src/a.py", "offset": 1, "limit": 1}, ctx)
     assert r.data["content"] == "y = 2\n" and r.data["lines_total"] == 2
     r = await EditFileTool().run(
@@ -13,7 +13,7 @@ async def test_write_read_edit(ctx):
     )
     assert r.ok and (ctx.workspace / "src" / "a.py").read_text() == "x = 42\ny = 2\n"
     r = await EditFileTool().run({"path": "src/a.py", "old_text": "= ", "new_text": "=="}, ctx)
-    assert not r.ok and "2 совпадений" in r.error["message"]
+    assert not r.ok and "2 matches" in r.error["message"]
 
 
 async def test_path_traversal_blocked(ctx):

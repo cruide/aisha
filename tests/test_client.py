@@ -30,8 +30,8 @@ def make_client(handler):
 
 async def test_text_and_fragmented_tool_calls():
     body = sse(
-        {"choices": [{"delta": {"content": "Прив"}}]},
-        {"choices": [{"delta": {"content": "ет"}}]},
+        {"choices": [{"delta": {"content": "Hel"}}]},
+        {"choices": [{"delta": {"content": "lo"}}]},
         {"choices": [{"delta": {"tool_calls": [{"index": 0, "id": "c1",
                                                 "function": {"name": "read_file",
                                                              "arguments": '{"pa'}}]}}]},
@@ -47,7 +47,7 @@ async def test_text_and_fragmented_tool_calls():
     deltas = []
     resp = await make_client(handler).chat([], temperature=0, max_tokens=10,
                                             on_event=lambda k, t: deltas.append(t))
-    assert resp.content == "Привет" and "".join(deltas) == "Привет"
+    assert resp.content == "Hello" and "".join(deltas) == "Hello"
     assert resp.finish_reason == "tool_calls"
     assert resp.tool_calls[0].id == "c1"
     assert resp.tool_calls[0].parse_arguments() == {"path": "a.py"}

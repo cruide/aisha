@@ -38,17 +38,17 @@ from aisha.errors import AishaError, ToolCancelledError
 from aisha.tools.base import ConfirmRequest, ToolRegistry, ToolResult
 
 COMMANDS = {
-    "/help": "справка по командам",
-    "/new": "новая сессия (очистить историю диалога)",
-    "/status": "сервер, модель, workspace, режим, токены",
-    "/tools": "доступные инструменты",
-    "/skills": "индекс скиллов",
-    "/memory": "блоки постоянной памяти",
-    "/compact": "сжать историю диалога",
-    "/doctor": "проверить соединение с сервером",
-    "/init": "изучить проект и создать AGENTS.md",
-    "/clear": "очистить экран",
-    "/quit": "выход (также /exit, Ctrl+D)",
+    "/help": "show command reference",
+    "/new": "new session (clear conversation history)",
+    "/status": "server, model, workspace, mode, tokens",
+    "/tools": "available tools",
+    "/skills": "skill index",
+    "/memory": "persistent memory blocks",
+    "/compact": "compact conversation history",
+    "/doctor": "check server connection",
+    "/init": "explore the project and create AGENTS.md",
+    "/clear": "clear screen",
+    "/quit": "exit (also /exit, Ctrl+D)",
 }
 
 PT_STYLE = Style.from_dict({
@@ -203,7 +203,7 @@ class ConsoleUI:
             f"{cfg.server.base_url} · {mode} · Shell: {cfg.tools.shell_type}\n", style="dim"
         )
         body.append(
-            "/help — команды · Tab — пути · Ctrl+↑/↓ — прошлые запросы · Ctrl+C — прервать",
+            "/help — commands · Tab — paths · Ctrl+↑/↓ — previous inputs · Ctrl+C — interrupt",
             style="dim",
         )
 
@@ -215,17 +215,17 @@ class ConsoleUI:
         for cmd, desc in COMMANDS.items():
             table.add_row(f"[bold cyan]{cmd}[/]", desc)
 
-        self.console.print(Panel(table, title="Команды", title_align="left", border_style="cyan"))
+        self.console.print(Panel(table, title="Commands", title_align="left", border_style="cyan"))
 
     def print_tools(self, registry: ToolRegistry) -> None:
         table = Table(box=None, show_header=True, header_style="bold", padding=(0, 2))
-        table.add_column("Инструмент")
-        table.add_column("Режим")
-        table.add_column("Описание")
+        table.add_column("Tool")
+        table.add_column("Mode")
+        table.add_column("Description")
         for tool in registry:
             table.add_row(f"[cyan]{tool.name}[/]", "read" if tool.read_only else "[yellow]write[/]",
                           tool.description)
-        self.console.print(Panel(table, title="Инструменты", title_align="left"))
+        self.console.print(Panel(table, title="Tools", title_align="left"))
 
     def print_status(self, model: str, registry: ToolRegistry) -> None:
         cfg, ctx = self.config, self.context
@@ -233,52 +233,52 @@ class ConsoleUI:
         s = ctx.stats
         table = Table.grid(padding=(0, 2))
         rows = [
-            ("Сервер", cfg.server.base_url), ("Модель", model),
+            ("Server", cfg.server.base_url), ("Model", model),
             ("Workspace", str(cfg.workspace)),
-            ("Режим", "read-only" if cfg.read_only else f"permission={cfg.tools.permission}"),
-            ("Shell", cfg.tools.shell_type if cfg.tools.shell else "отключён"),
-            ("Контекст", f"{'~' if s.approximate else ''}{fmt_int(s.ctx)} / "
+            ("Mode", "read-only" if cfg.read_only else f"permission={cfg.tools.permission}"),
+            ("Shell", cfg.tools.shell_type if cfg.tools.shell else "disabled"),
+            ("Context", f"{'~' if s.approximate else ''}{fmt_int(s.ctx)} / "
                          f"{fmt_int(cfg.llm.context_window)} "
-                         f"(бюджет {fmt_int(ctx.input_budget())})"),
-            ("Последний запрос", f"↑ {fmt_int(s.last_in)}  ↓ {fmt_int(s.last_out)}"),
-            ("Сессия", f"↑ {fmt_int(s.session_in)}  ↓ {fmt_int(s.session_out)}"),
-            ("Сообщений", str(len(ctx.messages))),
-            ("Инструментов", str(len(registry.names()))),
-            ("AGENTS.md", "загружен" if ctx.agents_md else "нет"),
-            ("SYSTEM.md", "заменяет базовый промпт" if ctx.system_md else "нет"),
-            ("Конфиги", ", ".join(cfg.sources) or "по умолчанию"),
+                         f"(budget {fmt_int(ctx.input_budget())})"),
+            ("Last request", f"↑ {fmt_int(s.last_in)}  ↓ {fmt_int(s.last_out)}"),
+            ("Session", f"↑ {fmt_int(s.session_in)}  ↓ {fmt_int(s.session_out)}"),
+            ("Messages", str(len(ctx.messages))),
+            ("Tools", str(len(registry.names()))),
+            ("AGENTS.md", "loaded" if ctx.agents_md else "none"),
+            ("SYSTEM.md", "replaces base prompt" if ctx.system_md else "none"),
+            ("Configs", ", ".join(cfg.sources) or "defaults"),
         ]
         for k, v in rows:
             table.add_row(f"[bold]{k}[/]", escape(v))
-        self.console.print(Panel(table, title="Статус", title_align="left", border_style="cyan"))
+        self.console.print(Panel(table, title="Status", title_align="left", border_style="cyan"))
 
     def print_skills(self) -> None:
         assert self.context
         idx = self.context.skills
         if not idx.skills and not idx.errors:
-            # self.info("Скиллы не найдены (~/.aisha/skills, <workspace>/.aisha/skills).")
+            # self.info("No skills found (~/.aisha/skills, <workspace>/.aisha/skills).")
             return
         table = Table.grid(padding=(0, 2))
         for s in idx.skills.values():
             table.add_row(f"[cyan]{s.name}[/]", f"[dim]{s.scope}[/]", escape(s.description))
-        self.console.print(Panel(table, title="Скиллы", title_align="left"))
+        self.console.print(Panel(table, title="Skills", title_align="left"))
         for err in idx.errors:
             self.warn(err)
 
     def print_memory(self) -> None:
         assert self.context
         if self.context.memory is None:
-            self.info("Память отключена.")
+            self.info("Memory is disabled.")
             return
         blocks = self.context.memory.list()
         if not blocks:
-            self.info("Блоков памяти пока нет.")
+            self.info("No memory blocks yet.")
             return
         table = Table.grid(padding=(0, 2))
         for b in blocks:
             table.add_row(f"[cyan]{b.label}[/]", f"[dim]{b.scope}[/]",
-                          escape(b.description or "—"), f"[dim]{len(b.value)} симв.[/]")
-        self.console.print(Panel(table, title="Память", title_align="left"))
+                          escape(b.description or "—"), f"[dim]{len(b.value)} chars[/]")
+        self.console.print(Panel(table, title="Memory", title_align="left"))
 
     def print_todos(self) -> None:
         assert self.context
@@ -294,7 +294,7 @@ class ConsoleUI:
         text = Text()
         for t in self.context.todos:
             text.append(f"{icons[t['status']]} {t['text']}\n", style=styles[t["status"]])
-        self.console.print(Panel(text, title="Задачи", title_align="left", border_style="blue"))
+        self.console.print(Panel(text, title="Tasks", title_align="left", border_style="blue"))
 
     # ----------------------------------------------------------- agent events
     def on_stream_start(self) -> None:
@@ -320,7 +320,7 @@ class ConsoleUI:
         return bool(self.config and (self.config.ui.show_reasoning or self.config.ui.debug))
 
     def _render_stream(self):
-        label = "aisha отвечает…" if self._tail else "aisha думает…"
+        label = "aisha replying…" if self._tail else "aisha thinking…"
         parts: list[Any] = [Spinner("dots", text=Text(label, style="yellow3"))]
         if not self._tail and self._rtail and self._show_reasoning():
             parts.append(Text(self._rtail, style="dim italic"))
@@ -374,7 +374,7 @@ class ConsoleUI:
                 line = Text.assemble(("  ✓ ", "green"), (call.name, "bold"),
                                      (f" — {result.summary or 'ok'}", ""), (suffix, "dim"))
                 if result.meta.get("truncated"):
-                    line.append(" (обрезано)", style="yellow")
+                    line.append(" (truncated)", style="yellow")
             else:
                 line = Text.assemble(("  ✗ ", "red"), (call.name, "bold"),
                                      (f" — {result.summary}", "red"), (suffix, "dim"))
@@ -421,17 +421,17 @@ class ConsoleUI:
         try:
             return await PromptSession(style=PT_STYLE).prompt_async([("class:prompt", message)])
         except (KeyboardInterrupt, EOFError) as exc:
-            raise ToolCancelledError("отменено пользователем") from exc
+            raise ToolCancelledError("cancelled by user") from exc
 
     async def confirm(self, request: ConfirmRequest) -> str | None:
         self._stop_lives()
         table = Table.grid(padding=(0, 1))
         for key, value in request.details:
             table.add_row(f"[bold]{key}:[/]", escape(value))
-        table.add_row("[bold]Причина:[/]", f"[yellow]{escape(request.reason)}[/]")
+        table.add_row("[bold]Reason:[/]", f"[yellow]{escape(request.reason)}[/]")
         self.console.print(Panel(table, title=f"⚠ {request.title}", title_align="left",
                                  border_style="yellow"))
-        answer = await self._plain_prompt("[y] один раз  [a] до конца сессии  [n] отказать › ")
+        answer = await self._plain_prompt("[y] once  [a] for the rest of session  [n] deny › ")
         return {"y": "y", "yes": "y", "д": "y", "a": "a", "all": "a", "в": "a"}.get(
             answer.strip().lower()
         )
@@ -441,16 +441,17 @@ class ConsoleUI:
         body = Text(question)
         for i, option in enumerate(options, 1):
             body.append(f"\n  {i}. {option}", style="cyan")
-        self.console.print(Panel(body, title="❔ Вопрос", title_align="left", border_style="cyan"))
+        self.console.print(Panel(body, title="❔ Question",
+                                 title_align="left", border_style="cyan"))
         while True:
-            answer = (await self._plain_prompt("Ответ › ")).strip()
+            answer = (await self._plain_prompt("Answer › ")).strip()
             if not answer:
                 continue
             if options and answer.isdigit() and 1 <= int(answer) <= len(options):
                 return options[int(answer) - 1]
             if not options or allow_free_text or answer in options:
                 return answer
-            self.warn("Выберите номер одного из вариантов.")
+            self.warn("Select one of the options by number.")
 
     # ------------------------------------------------------------------ REPL
     async def _run_cancellable(self, coro: Awaitable[Any]) -> Any:
@@ -466,7 +467,7 @@ class ConsoleUI:
             return await task
         except asyncio.CancelledError:
             self._stop_lives()
-            self.warn("Прервано пользователем.")
+            self.warn("Interrupted by user.")
         except AishaError as exc:
             self.error(str(exc), exc)
         except Exception as exc:  # never let a bug kill the REPL
@@ -494,7 +495,7 @@ class ConsoleUI:
             try:
                 text = await self.session.prompt_async([("class:prompt", "❯ ")])
             except KeyboardInterrupt:
-                self.info("Выход.")
+                self.info("Exit.")
                 return
             except EOFError:
                 return
@@ -520,7 +521,7 @@ class ConsoleUI:
             self.print_help()
         elif cmd == "/new":
             self.context.reset()
-            self.info("Новая сессия: история и счётчики сброшены, AGENTS.md перечитан.")
+            self.info("Session cleared: history and counters reset, AGENTS.md re-read.")
         elif cmd == "/status":
             self.print_status(self.client.model, registry)
         elif cmd == "/tools":
@@ -537,14 +538,13 @@ class ConsoleUI:
             self.console.clear()
         elif cmd == "/init":
             prompt = (
-                "Изучи очень внимательно структуру этого проекта (list_dir, glob, read_file "
-                "ключевых файлов: README, конфиги сборки, точки входа) и создай в корне файл "
-                "AGENTS.md: подробное назначение проекта, команды сборки/тестов/линта, "
-                "архитектура по каталогам, конвенции кода и неочевидные особенности. "
-                "По возможности, до 25 КБ. Вся информация в AGENTS.md должна быть "
-                "на английском языке."
+                "Study this project's structure carefully (list_dir, glob, read_file of key "
+                "files: README, build configs, entry points) and create an AGENTS.md file in "
+                "the root: detailed project purpose, build/test/lint commands, directory "
+                "architecture, code conventions and non-obvious details. "
+                "Up to 25 KB if possible. All information in AGENTS.md must be in English."
             )
             await self._run_cancellable(agent.run(prompt))
         else:
-            self.warn(f"Неизвестная команда {cmd}. /help — список команд.")
+            self.warn(f"Unknown command {cmd}. /help — list of commands.")
         return True

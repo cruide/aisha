@@ -31,23 +31,23 @@ def _is_private_ip(ip: str) -> bool:
 async def check_url(url: str, allow_private: bool) -> None:
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
-        raise ToolValidationError(f"Разрешены только http/https URL, получено: {url}")
+        raise ToolValidationError(f"Only http/https URLs are allowed, got: {url}")
     host = parsed.hostname
     if not host:
-        raise ToolValidationError(f"Некорректный URL: {url}")
+        raise ToolValidationError(f"Invalid URL: {url}")
     if allow_private:
         return
     if host.lower() in ("localhost", "localhost.localdomain") or host.endswith(".local"):
-        raise ToolPermissionError(f"Доступ к локальному хосту запрещён: {host}")
+        raise ToolPermissionError(f"Access to localhost is forbidden: {host}")
     try:
         infos = await asyncio.wait_for(
             asyncio.to_thread(socket.getaddrinfo, host, None, proto=socket.IPPROTO_TCP), 10
         )
     except (socket.gaierror, asyncio.TimeoutError) as exc:
-        raise ToolValidationError(f"Не удалось разрешить имя хоста {host}: {exc}") from exc
+        raise ToolValidationError(f"Failed to resolve hostname {host}: {exc}") from exc
     for info in infos:
         if _is_private_ip(info[4][0]):
-            raise ToolPermissionError(f"Доступ к приватным адресам запрещён: {host}")
+            raise ToolPermissionError(f"Access to private addresses is forbidden: {host}")
 
 
 def html_to_text(html: str) -> tuple[str, str]:
@@ -67,9 +67,9 @@ class WebSearchTool(Tool):
     name = "web_search"
     read_only = True
     description = (
-        "Поиск в интернете (DuckDuckGo). Обязательный аргумент: query — поисковый запрос. "
-        "Необязательный: max_results (количество результатов). Возвращает заголовки, URL и "
-        "сниппеты. Пример: web_search(query=\"как настроить llama.cpp\")."
+        "Web search (DuckDuckGo). Required argument: query — search query. "
+        "Optional: max_results (number of results). Returns titles, URLs and "
+        "snippets. Example: web_search(query=\"how to set up llama.cpp\")."
     )
     parameters = {
         "type": "object",
@@ -93,25 +93,25 @@ class WebSearchTool(Tool):
         try:
             raw = await asyncio.wait_for(asyncio.to_thread(_search), cfg.timeout + 10)
         except asyncio.TimeoutError:
-            return ToolResult.failure("ToolTimeoutError", "Поисковый провайдер не ответил вовремя")
+            return ToolResult.failure("ToolTimeoutError", "Search provider timed out")
         except Exception as exc:  # provider errors must be returned to the model
-            return ToolResult.failure("SearchProviderError", f"Ошибка поиска: {exc}")
+            return ToolResult.failure("SearchProviderError", f"Search error: {exc}")
         results = [
             {"position": i, "title": r.get("title", ""), "url": r.get("href") or r.get("url", ""),
              "snippet": r.get("body", "")}
             for i, r in enumerate(raw, 1)
         ]
         return ToolResult.success({"query": query, "results": results},
-                                  f"{len(results)} результатов")
+                                  f"{len(results)} results")
 
 
 class WebFetchTool(Tool):
     name = "web_fetch"
     read_only = True
     description = (
-        "Загрузить веб-страницу по URL и вернуть извлечённый текст. Обязательный аргумент: url — "
-        "полный адрес с http/https. Необязательный: max_chars (лимит символов текста). "
-        "Пример: web_fetch(url=\"https://example.com/docs\")."
+        "Fetch a web page by URL and return extracted text. Required argument: url — "
+        "full address with http/https. Optional: max_chars (text character limit). "
+        "Example: web_fetch(url=\"https://example.com/docs\")."
     )
     parameters = {
         "type": "object",
@@ -153,10 +153,10 @@ class WebFetchTool(Tool):
                         ctype = resp.headers.get("content-type", "")
                         encoding = resp.charset_encoding or "utf-8"
                 except httpx.HTTPError as exc:
-                    return ToolResult.failure("HTTPError", f"Ошибка загрузки {url}: {exc}")
+                    return ToolResult.failure("HTTPError", f"Failed to fetch {url}: {exc}")
                 break
             else:
-                return ToolResult.failure("HTTPError", "Слишком много редиректов")
+                return ToolResult.failure("HTTPError", "Too many redirects")
 
         raw = bytes(body).decode(encoding, errors="replace")
         if "html" in ctype or raw.lstrip()[:200].lower().startswith(("<!doctype", "<html")):
@@ -167,5 +167,5 @@ class WebFetchTool(Tool):
             text, truncated = text[:max_chars], True
         return ToolResult.success(
             {"url": url, "title": title, "content_type": ctype, "text": text},
-            f"{title[:60] or url} · {len(text)} символов", truncated=truncated,
+            f"{title[:60] or url} · {len(text)} chars", truncated=truncated,
         )

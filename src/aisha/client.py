@@ -29,7 +29,7 @@ class ToolCall:
         raw = self.arguments.strip() or "{}"
         obj = json.loads(raw)
         if not isinstance(obj, dict):
-            raise ValueError("аргументы должны быть JSON-объектом")
+            raise ValueError("arguments must be a JSON object")
         return obj
 
     def to_message(self) -> dict[str, Any]:
@@ -105,9 +105,9 @@ class LlamaClient:
         try:
             resp = await self._http.get("/health")
         except httpx.HTTPError as exc:
-            raise ServerUnavailableError(f"Сервер {self.base_url} недоступен: {exc}") from exc
+            raise ServerUnavailableError(f"Server {self.base_url} is unavailable: {exc}") from exc
         if resp.status_code == 503:
-            raise ServerUnavailableError("Сервер отвечает 503: модель ещё загружается")
+            raise ServerUnavailableError("Server returned 503: model is still loading")
         if resp.status_code != 200:
             return None
         try:
@@ -122,12 +122,12 @@ class LlamaClient:
             resp.raise_for_status()
             payload = resp.json()
         except httpx.HTTPError as exc:
-            raise ServerUnavailableError(f"Не удалось получить /v1/models: {exc}") from exc
+            raise ServerUnavailableError(f"Failed to fetch /v1/models: {exc}") from exc
         except ValueError as exc:
-            raise ProtocolError("/v1/models вернул не JSON") from exc
+            raise ProtocolError("/v1/models returned non-JSON") from exc
         items = payload.get("data") if isinstance(payload, dict) else None
         if not isinstance(items, list):
-            raise ProtocolError("Несовместимый ответ /v1/models")
+            raise ProtocolError("Incompatible /v1/models response")
         result: dict[str, dict[str, Any]] = {}
         for item in items:
             if isinstance(item, dict) and item.get("id"):
@@ -163,7 +163,7 @@ class LlamaClient:
             self.model = model = names[0]
             matched = False
         else:
-            raise ServerUnavailableError("Сервер не вернул ни одной модели")
+            raise ServerUnavailableError("Server returned no models")
         meta = info.get(model, {})
         n_ctx = meta.get("n_ctx")
         n_ctx = n_ctx if isinstance(n_ctx, int) and n_ctx > 0 else None
@@ -204,7 +204,7 @@ class LlamaClient:
                 payload.pop("stream_options", None)
             except _Retryable as exc:
                 if attempt >= len(RETRY_DELAYS):
-                    raise ServerUnavailableError(f"Сервер недоступен: {exc}") from exc
+                    raise ServerUnavailableError(f"Server unavailable: {exc}") from exc
                 await asyncio.sleep(RETRY_DELAYS[attempt])
                 attempt += 1
 
@@ -231,15 +231,15 @@ class LlamaClient:
                     try:
                         chunk = json.loads(data)
                     except json.JSONDecodeError as exc:
-                        raise ProtocolError(f"Некорректный JSON в SSE: {data[:200]}") from exc
+                        raise ProtocolError(f"Malformed JSON in SSE: {data[:200]}") from exc
                     self._apply_chunk(chunk, result, pending, on_event)
         except httpx.ReadTimeout as exc:
             if started:
-                raise ServerUnavailableError("Таймаут ожидания ответа сервера") from exc
+                raise ServerUnavailableError("Server response timed out") from exc
             raise _Retryable(str(exc)) from exc
         except (httpx.ConnectError, httpx.ConnectTimeout, httpx.RemoteProtocolError) as exc:
             if started:
-                raise ProtocolError(f"Соединение прервано во время ответа: {exc}") from exc
+                raise ProtocolError(f"Connection interrupted during response: {exc}") from exc
             raise _Retryable(str(exc)) from exc
 
         for idx in sorted(pending):
@@ -257,7 +257,7 @@ class LlamaClient:
             raise _Retryable(f"HTTP {status}")
         lowered = body.lower()
         if status == 400 and ("context" in lowered or "exceed" in lowered or "n_ctx" in lowered):
-            raise ContextOverflowError(f"Запрос превышает контекст модели: {body[:300]}")
+            raise ContextOverflowError(f"Request exceeds model context: {body[:300]}")
         raise ProtocolError(f"HTTP {status}: {body[:500]}")
 
     @staticmethod
@@ -270,7 +270,7 @@ class LlamaClient:
         if "error" in chunk:
             err = chunk["error"]
             msg = err.get("message") if isinstance(err, dict) else str(err)
-            raise ProtocolError(f"Ошибка сервера: {msg}")
+            raise ProtocolError(f"Server error: {msg}")
         usage = chunk.get("usage")
         if isinstance(usage, dict) and usage:
             result.usage = usage

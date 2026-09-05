@@ -16,9 +16,9 @@ class TodoWriteTool(Tool):
     name = "todowrite"
     read_only = True
     description = (
-        "Обновить список задач текущей сессии (полная замена списка). Обязательный аргумент: "
-        "items — массив объектов вида {text: строка, status: pending|in_progress|done|cancelled}. "
-        "Пример: todowrite(items=[{text: 'написать тест', status: 'pending'}])."
+        "Update the current session's task list (full replacement). Required argument: "
+        "items — array of objects like {text: string, status: pending|in_progress|done|cancelled}. "
+        "Example: todowrite(items=[{text: 'write tests', status: 'pending'}])."
     )
     parameters = {
         "type": "object",
@@ -42,25 +42,25 @@ class TodoWriteTool(Tool):
         items: list[dict[str, str]] = []
         for raw in args["items"]:
             if not isinstance(raw, dict) or not str(raw.get("text", "")).strip():
-                raise ToolValidationError("каждый элемент должен содержать непустой text")
+                raise ToolValidationError("each item must contain a non-empty text")
             status = str(raw.get("status", "pending"))
             if status not in TODO_STATUSES:
-                raise ToolValidationError(f"недопустимый status {status!r}")
+                raise ToolValidationError(f"invalid status {status!r}")
             items.append({"text": str(raw["text"]).strip(), "status": status})
         ctx.todos[:] = items
         if ctx.on_system_change:
             ctx.on_system_change()
         done = sum(1 for t in items if t["status"] == "done")
-        return ToolResult.success({"items": items}, f"{done}/{len(items)} выполнено")
+        return ToolResult.success({"items": items}, f"{done}/{len(items)} done")
 
 
 class AskUserTool(Tool):
     name = "ask_user"
     read_only = True
     description = (
-        "Задать пользователю уточняющий вопрос и дождаться ответа. Обязательный аргумент: "
-        "question — текст вопроса. Необязательные: options (список вариантов) и allow_free_text. "
-        "Используй, когда задача неоднозначна, вместо того чтобы гадать."
+        "Ask the user a clarifying question and wait for an answer. Required argument: "
+        "question — the question text. Optional: options (list of choices) and allow_free_text. "
+        "Use when a task is ambiguous instead of guessing."
     )
     parameters = {
         "type": "object",
@@ -74,22 +74,22 @@ class AskUserTool(Tool):
 
     async def run(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         if ctx.ask is None or not ctx.interactive:
-            raise ToolPermissionError("ask_user недоступен в неинтерактивном режиме")
+            raise ToolPermissionError("ask_user is not available in non-interactive mode")
         options = [str(o) for o in args.get("options") or []]
         answer = await ctx.ask(args["question"], options, bool(args.get("allow_free_text", True)))
-        return ToolResult.success({"answer": answer}, f"ответ: {answer[:60]}")
+        return ToolResult.success({"answer": answer}, f"answer: {answer[:60]}")
 
 
 def _store(ctx: ToolContext):
     if ctx.memory is None:
-        raise ToolPermissionError("Память отключена в конфигурации")
+        raise ToolPermissionError("Memory is disabled in the configuration")
     return ctx.memory
 
 
 class MemoryListTool(Tool):
     name = "memory_list"
     read_only = True
-    description = "Список блоков постоянной памяти с описаниями. Аргументы не требуются."
+    description = "List persistent memory blocks with descriptions. No arguments required."
     parameters = {"type": "object", "properties": {}}
 
     async def run(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
@@ -97,14 +97,14 @@ class MemoryListTool(Tool):
         blocks = [{"label": b.label, "description": b.description, "scope": b.scope,
                    "updated_at": b.updated_at} for b in store.list()]
         return ToolResult.success({"blocks": blocks, "errors": list(store.errors)},
-                                  f"{len(blocks)} блоков")
+                                  f"{len(blocks)} blocks")
 
 
 class MemoryGetTool(Tool):
     name = "memory_get"
     read_only = True
     silent = True
-    description = "Прочитать содержимое блока памяти. Обязательный аргумент: label — имя блока."
+    description = "Read the contents of a memory block. Required argument: label — block name."
     parameters = {"type": "object", "properties": {"label": {"type": "string"}},
                   "required": ["label"]}
 
@@ -113,21 +113,20 @@ class MemoryGetTool(Tool):
 
 
         if block is None:
-            return ToolResult.failure("NotFound", f"Блок памяти не найден: {args['label']}")
+            return ToolResult.failure("NotFound", f"Memory block not found: {args['label']}")
         return ToolResult.success(
             {"label": block.label, "description": block.description, "value": block.value,
              "scope": block.scope, "updated_at": block.updated_at},
-            f"{len(block.value)} символов",
+            f"{len(block.value)} chars",
         )
 
 
 class MemorySetTool(Tool):
     name = "memory_set"
     description = (
-        "Создать или полностью перезаписать блок памяти. Обязательные аргументы: label (имя), "
-        "description (краткое назначение) и value (содержимое). scope: global (предпочтения "
-        "пользователя) или project (правила текущего проекта). Сохраняй только устойчивые факты, "
-        "не сохраняй секреты."
+        "Create or fully overwrite a memory block. Required arguments: label (name), "
+        "description (brief purpose) and value (contents). scope: global (user preferences) "
+        "or project (current project rules). Save only durable facts, do not store secrets."
     )
     parameters = {
         "type": "object",
@@ -152,8 +151,8 @@ class MemorySetTool(Tool):
 class MemoryReplaceTool(Tool):
     name = "memory_replace"
     description = (
-        "Точная замена текста внутри блока памяти. Обязательные аргументы: label (имя блока), "
-        "old_text (точный заменяемый фрагмент) и new_text (новый текст)."
+        "Exact text replacement inside a memory block. Required arguments: label (block name), "
+        "old_text (exact fragment to replace) and new_text (replacement text)."
     )
     parameters = {
         "type": "object",
@@ -172,31 +171,31 @@ class MemoryReplaceTool(Tool):
         if ctx.on_system_change:
             ctx.on_system_change()
         return ToolResult.success({"label": block.label, "chars": len(block.value)},
-                                  f"{block.label} обновлён")
+                                  f"{block.label} updated")
 
 
 class SkillTool(Tool):
     name = "skill"
     read_only = True
-    description = "Загрузить полный текст скилла по имени из индекса. Обязательный аргумент: name."
+    description = "Load a skill's full text by name from the index. Required argument: name."
     parameters = {"type": "object", "properties": {"name": {"type": "string"}},
                   "required": ["name"]}
 
     async def run(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         skill = ctx.skills.get(args["name"])
         if skill is None:
-            return ToolResult.failure("NotFound", f"Скилл не найден: {args['name']}")
+            return ToolResult.failure("NotFound", f"Skill not found: {args['name']}")
         mtime = skill.path.stat().st_mtime
         if ctx.loaded_skills.get(skill.name) == mtime:
             return ToolResult.success(
                 {"name": skill.name, "already_loaded": True,
-                 "note": "Скилл уже загружен в этой сессии и не изменялся."},
-                "уже загружен",
+                 "note": "Skill is already loaded in this session and has not changed."},
+                "already loaded",
             )
         ctx.loaded_skills[skill.name] = mtime
         body = skill_body(skill.path)
         return ToolResult.success(
             {"name": skill.name, "scope": skill.scope, "directory": str(skill.directory),
              "content": body},
-            f"{skill.name}, {len(body)} символов",
+            f"{skill.name}, {len(body)} chars",
         )

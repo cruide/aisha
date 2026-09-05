@@ -69,7 +69,7 @@ def _parse_bool(raw: str) -> bool:
         return True
     if raw.lower() in ("false", "0", "no"):
         return False
-    raise ValueError(f"ожидается true/false, получено {raw!r}")
+    raise ValueError(f"expected true/false, got {raw!r}")
 
 
 ENV_VARS: dict[str, tuple[str, str, type] | tuple[str, str, Any]] = {
@@ -174,9 +174,9 @@ def _load_toml(path: Path) -> dict[str, Any]:
         with path.open("rb") as fh:
             return tomllib.load(fh)
     except tomllib.TOMLDecodeError as exc:
-        raise ConfigurationError(f"{path}: ошибка разбора TOML: {exc}") from exc
+        raise ConfigurationError(f"{path}: TOML parse error: {exc}") from exc
     except OSError as exc:
-        raise ConfigurationError(f"{path}: не удалось прочитать файл: {exc}") from exc
+        raise ConfigurationError(f"{path}: failed to read file: {exc}") from exc
 
 
 def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> None:
@@ -190,12 +190,12 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> None:
 def _check_structure(data: dict[str, Any], source: str) -> None:
     for section, values in data.items():
         if section not in DEFAULTS:
-            raise ConfigurationError(f"{source}: неизвестная секция [{section}]")
+            raise ConfigurationError(f"{source}: unknown section [{section}]")
         if not isinstance(values, dict):
-            raise ConfigurationError(f"{source}: секция [{section}] должна быть таблицей")
+            raise ConfigurationError(f"{source}: section [{section}] must be a table")
         for key in values:
             if key not in DEFAULTS[section]:
-                raise ConfigurationError(f"{source}: [{section}] неизвестный параметр '{key}'")
+                raise ConfigurationError(f"{source}: [{section}] unknown parameter '{key}'")
 
 
 def _check_project_security(project: dict[str, Any], current: dict[str, Any], source: str) -> None:
@@ -203,17 +203,17 @@ def _check_project_security(project: dict[str, Any], current: dict[str, Any], so
     tools = project.get("tools", {})
     if tools.get("permission") == "auto":
         raise ConfigurationError(
-            f'{source}: [tools] permission = "auto" нельзя задавать в проектном конфиге '
-            "(только глобально или через --permission auto)"
+            f'{source}: [tools] permission = "auto" cannot be set in a project config '
+            "(only globally or via --permission auto)"
         )
     for key in ("allow_read_outside_workspace", "allow_write_outside_workspace"):
         if tools.get(key) is True:
             raise ConfigurationError(
-                f"{source}: [tools] {key} = true разрешён только в глобальном конфиге"
+                f"{source}: [tools] {key} = true is only allowed in the global config"
             )
     if tools.get("shell") is True and not current["tools"]["shell"]:
         raise ConfigurationError(
-            f"{source}: [tools] shell запрещён глобально и не может быть включён проектом"
+            f"{source}: [tools] shell is globally disabled and cannot be enabled by a project"
         )
 
 
@@ -224,23 +224,23 @@ def _validate(data: dict[str, Any], source: str) -> None:
     def positive(section: str, key: str) -> None:
         value = data[section][key]
         if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
-            fail(section, key, f"ожидается положительное число, получено {value!r}")
+            fail(section, key, f"expected a positive number, got {value!r}")
 
     def number_in_range(section: str, key: str, lo: float, hi: float) -> None:
         value = data[section][key]
         if isinstance(value, bool) or not isinstance(value, (int, float)):
-            fail(section, key, f"ожидается число от {lo} до {hi}, получено {value!r}")
+            fail(section, key, f"expected a number from {lo} to {hi}, got {value!r}")
         if not lo <= float(value) <= hi:
-            fail(section, key, f"ожидается значение от {lo} до {hi}")
+            fail(section, key, f"expected a value from {lo} to {hi}")
 
     srv, llm, tools = data["server"], data["llm"], data["tools"]
     url = urlparse(str(srv["base_url"]))
     if url.scheme not in ("http", "https") or not url.netloc:
-        fail("server", "base_url", f"некорректный URL {srv['base_url']!r}")
-    if not str(srv["model"]).strip():
-        fail("server", "model", "имя модели обязательно")
+        fail("server", "base_url", f"invalid URL {srv['base_url']!r}")
+        if not str(srv["model"]).strip():
+            fail("server", "model", "model name is required")
     if srv["api_key"] is not None and not isinstance(srv["api_key"], str):
-        fail("server", "api_key", "ожидается строка")
+        fail("server", "api_key", "expected a string")
     for key in ("connect_timeout", "request_timeout"):
         positive("server", key)
     for key in ("max_output_tokens", "context_window", "max_tool_iterations"):
@@ -252,21 +252,21 @@ def _validate(data: dict[str, Any], source: str) -> None:
     if llm["top_k"] is not None:
         if isinstance(llm["top_k"], bool) or not isinstance(llm["top_k"], int) \
                 or llm["top_k"] <= 0:
-            fail("llm", "top_k", f"ожидается положительное целое, получено {llm['top_k']!r}")
+            fail("llm", "top_k", f"expected a positive integer, got {llm['top_k']!r}")
     if llm["repeat_penalty"] is not None:
         if isinstance(llm["repeat_penalty"], bool) \
                 or not isinstance(llm["repeat_penalty"], (int, float)) \
                 or llm["repeat_penalty"] <= 0:
             fail("llm", "repeat_penalty",
-                 f"ожидается положительное число, получено {llm['repeat_penalty']!r}")
+                 f"expected a positive number, got {llm['repeat_penalty']!r}")
     if llm["frequency_penalty"] is not None:
         number_in_range("llm", "frequency_penalty", -2.0, 2.0)
     if llm["max_output_tokens"] > llm["context_window"]:
-        fail("llm", "max_output_tokens", "не должен превышать context_window")
+        fail("llm", "max_output_tokens", "must not exceed context_window")
     if tools["permission"] not in PERMISSIONS:
-        fail("tools", "permission", f"допустимо: {', '.join(PERMISSIONS)}")
+        fail("tools", "permission", f"allowed values: {', '.join(PERMISSIONS)}")
     if tools["shell_type"] not in SHELLS:
-        fail("tools", "shell_type", f"допустимо: {', '.join(SHELLS)}")
+        fail("tools", "shell_type", f"allowed values: {', '.join(SHELLS)}")
     for key in ("shell_timeout", "max_output_chars"):
         positive("tools", key)
     for key in ("timeout", "max_results", "max_page_bytes", "max_content_chars"):
@@ -282,7 +282,7 @@ def _validate(data: dict[str, Any], source: str) -> None:
     )
     for section, key in bool_keys:
         if not isinstance(data[section][key], bool):
-            fail(section, key, "ожидается true/false")
+            fail(section, key, "expected true/false")
 
 
 def load_config(
@@ -321,13 +321,13 @@ def load_config(
         try:
             data[section][key] = cast(raw)
         except ValueError as exc:
-            raise ConfigurationError(f"{name}: некорректное значение {raw!r}") from exc
+            raise ConfigurationError(f"{name}: invalid value {raw!r}") from exc
         sources.append(name)
-    _validate(data, "переменные окружения")
+    _validate(data, "environment variables")
 
     if cli:
         _deep_merge(data, cli)
-        _validate(data, "аргументы командной строки")
+        _validate(data, "command-line arguments")
         sources.append("CLI")
 
     sources = list(dict.fromkeys(sources))

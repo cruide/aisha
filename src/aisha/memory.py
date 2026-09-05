@@ -37,7 +37,7 @@ class MemoryStore:
     def validate_label(label: str) -> str:
         if not NAME_RE.match(label or ""):
             raise ToolValidationError(
-                f"Недопустимое имя блока {label!r}: [a-zA-Z0-9][a-zA-Z0-9_-]{{0,63}}"
+                f"Invalid block name {label!r}: must match [a-zA-Z0-9][a-zA-Z0-9_-]{{0,63}}"
             )
         return label
 
@@ -80,7 +80,7 @@ class MemoryStore:
                 if block:
                     blocks[block.label] = block
                 else:
-                    self.errors.append(f"{path}: не удалось прочитать блок памяти")
+                    self.errors.append(f"{path}: failed to read memory block")
         return sorted(blocks.values(), key=lambda b: b.label)
 
     def list(self) -> list[MemoryBlock]:
@@ -100,11 +100,11 @@ class MemoryStore:
     def set(self, label: str, description: str, value: str, scope: str = "global") -> MemoryBlock:
         self.validate_label(label)
         if scope not in SCOPES:
-            raise ToolValidationError(f"scope должен быть одним из: {', '.join(SCOPES)}")
+            raise ToolValidationError(f"scope must be one of: {', '.join(SCOPES)}")
         if len(value) > self.max_block_chars:
             raise ToolValidationError(
-                f"Блок слишком большой ({len(value)} символов, лимит {self.max_block_chars}). "
-                "Сначала сожми содержимое."
+                f"Block is too large ({len(value)} chars, limit {self.max_block_chars}). "
+                "Compress the content first."
             )
         block = MemoryBlock(
             label=label,
@@ -125,12 +125,12 @@ class MemoryStore:
     def replace(self, label: str, old: str, new: str, expected: int = 1) -> MemoryBlock:
         block = self.get(label)
         if block is None:
-            raise ToolValidationError(f"Блок памяти не найден: {label}")
+            raise ToolValidationError(f"Memory block not found: {label}")
         count = block.value.count(old)
         if count == 0:
-            raise ToolValidationError("Текст для замены не найден в блоке")
+            raise ToolValidationError("Replacement text not found in the block")
         if count != expected:
-            raise ToolValidationError(f"Найдено {count} совпадений, ожидалось {expected}")
+            raise ToolValidationError(f"Found {count} matches, expected {expected}")
         return self.set(label, block.description, block.value.replace(old, new), block.scope)
 
     def index_text(self) -> str:
@@ -138,5 +138,5 @@ class MemoryStore:
         if not blocks:
             return ""
         return "\n".join(
-            f"- {b.label} ({b.scope}) — {b.description or 'без описания'}" for b in blocks
+            f"- {b.label} ({b.scope}) — {b.description or 'no description'}" for b in blocks
         )

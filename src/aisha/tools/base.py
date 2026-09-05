@@ -82,7 +82,7 @@ async def require_confirmation(ctx: ToolContext, request: ConfirmRequest) -> Non
         return
     if ctx.confirm is None:
         raise ToolPermissionError(
-            f"{request.title}: требуется подтверждение, но интерактивный режим недоступен"
+            f"{request.title}: confirmation required but interactive mode is not available"
         )
     answer = await ctx.confirm(request)
     if answer == "a":
@@ -90,7 +90,7 @@ async def require_confirmation(ctx: ToolContext, request: ConfirmRequest) -> Non
         return
     if answer == "y":
         return
-    raise ToolCancelledError(f"{request.title}: отклонено пользователем")
+    raise ToolCancelledError(f"{request.title}: rejected by user")
 
 
 _TYPES: dict[str, tuple[type, ...]] = {
@@ -102,11 +102,11 @@ _TYPES: dict[str, tuple[type, ...]] = {
 def validate_args(schema: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:
     """Validate against a minimal JSON-schema subset; unknown keys are dropped."""
     if not isinstance(args, dict):
-        raise ToolValidationError("аргументы должны быть JSON-объектом")
+        raise ToolValidationError("arguments must be a JSON object")
     props: dict[str, Any] = schema.get("properties", {})
     missing = [k for k in schema.get("required", []) if args.get(k) is None]
     if missing:
-        raise ToolValidationError(f"отсутствуют обязательные аргументы: {', '.join(missing)}")
+        raise ToolValidationError(f"missing required arguments: {', '.join(missing)}")
     clean: dict[str, Any] = {}
     for key, value in args.items():
         if key not in props or value is None:
@@ -133,11 +133,11 @@ def validate_args(schema: dict[str, Any], args: dict[str, Any]) -> dict[str, Any
                 value, ok = str(value), True
             if not ok:
                 raise ToolValidationError(
-                    f"аргумент '{key}': ожидается {expected}, получено {type(value).__name__}"
+                    f"argument '{key}': expected {expected}, got {type(value).__name__}"
                 )
         if "enum" in spec and value not in spec["enum"]:
             raise ToolValidationError(
-                f"аргумент '{key}': допустимые значения {', '.join(map(str, spec['enum']))}"
+                f"argument '{key}': allowed values: {', '.join(map(str, spec['enum']))}"
             )
         clean[key] = value
     return clean
@@ -170,7 +170,7 @@ class ToolRegistry:
 
     def register(self, tool: Tool) -> None:
         if tool.name in self._tools:
-            raise ValueError(f"Инструмент уже зарегистрирован: {tool.name}")
+            raise ValueError(f"Tool already registered: {tool.name}")
         self._tools[tool.name] = tool
 
     def get(self, name: str) -> Tool | None:
@@ -189,11 +189,11 @@ class ToolRegistry:
         started = time.perf_counter()
         tool = self.get(name)
         if tool is None:
-            result = ToolResult.failure("UnknownTool", f"Неизвестный инструмент: {name}")
+            result = ToolResult.failure("UnknownTool", f"Unknown tool: {name}")
         else:
             try:
                 if ctx.config.read_only and not tool.read_only:
-                    raise ToolPermissionError(f"Режим read-only: инструмент {name} недоступен")
+                    raise ToolPermissionError(f"Read-only mode: tool {name} is not available")
                 result = await tool.run(validate_args(tool.parameters, args), ctx)
             except asyncio.CancelledError:
                 raise

@@ -31,16 +31,16 @@ def parse_skill_file(path: Path, scope: str) -> Skill:
     text = path.read_text(encoding="utf-8")
     match = FRONTMATTER_RE.match(text)
     if not match:
-        raise ToolValidationError(f"{path}: отсутствует YAML frontmatter")
+        raise ToolValidationError(f"{path}: missing YAML frontmatter")
     meta = yaml.safe_load(match.group(1)) or {}
     if not isinstance(meta, dict):
-        raise ToolValidationError(f"{path}: frontmatter должен быть словарём")
+        raise ToolValidationError(f"{path}: frontmatter must be a mapping")
     name = str(meta.get("name", "")).strip()
     description = str(meta.get("description", "")).strip()
     if not NAME_RE.match(name):
-        raise ToolValidationError(f"{path}: некорректное поле name {name!r}")
+        raise ToolValidationError(f"{path}: invalid name field {name!r}")
     if not description:
-        raise ToolValidationError(f"{path}: поле description обязательно")
+        raise ToolValidationError(f"{path}: description field is required")
     return Skill(name=name, description=description, path=path, scope=scope)
 
 

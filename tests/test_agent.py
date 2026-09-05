@@ -97,11 +97,11 @@ def make_agent(config, skills, workspace, client, events=None):
 async def test_agent_executes_tool_and_returns_content(config, skills, workspace):
     client = FakeClient([
         ChatResponse(tool_calls=[ToolCall(id="c1", name="echo", arguments='{"text": "hi"}')]),
-        ChatResponse(content="готово"),
+        ChatResponse(content="done"),
     ])
     agent = make_agent(config, skills, workspace, client)
-    result = await agent.run("позови echo")
-    assert result == "готово"
+    result = await agent.run("call echo")
+    assert result == "done"
     roles = [m["role"] for m in agent.context.messages]
     assert roles == ["user", "assistant", "tool", "assistant"]
 
@@ -116,7 +116,7 @@ async def test_parallel_read_only_calls_both_execute(config, skills, workspace, 
         ChatResponse(content="ok"),
     ])
     agent = make_agent(config, skills, workspace, client)
-    result = await agent.run("дважды")
+    result = await agent.run("twice")
     assert result == "ok"
     tool_msgs = [m for m in agent.context.messages if m.get("role") == "tool"]
     assert len(tool_msgs) == 2
@@ -139,7 +139,7 @@ async def test_compaction_does_not_loop_when_still_over_limit(config, skills, wo
     result = await agent.run("x")
     assert result == "ok"
     assert compact_calls["n"] == 1
-    assert any("сжатие" in text.lower() for _, text in events.notices)
+    assert any("compaction" in text.lower() for _, text in events.notices)
 
 
 async def test_max_tokens_capped_to_remaining_context(config, skills, workspace):
@@ -166,10 +166,10 @@ async def test_iteration_limit_stops_tool_loop(config, skills, workspace):
     ])
     events = FakeEvents()
     agent = make_agent(config, skills, workspace, client, events)
-    result = await agent.run("зацикли")
+    result = await agent.run("loop")
     assert result == ""
     assert len(client.calls) == 3  # tool, tool (limit hit), no-tools refusal
-    assert any("лимит" in text for _, text in events.notices)
+    assert any("limit" in text.lower() for _, text in events.notices)
 
 
 def test_large_agents_md_does_not_force_compaction(config, skills, workspace):
@@ -188,8 +188,8 @@ def test_system_prompt_cached_and_invalidated(config, skills, workspace):
 
 def test_sent_chars_matches_manual(config, skills, workspace):
     context = ConversationContext(config, None, skills)
-    context.add_user("привет")
-    context.add_assistant(ChatResponse(content="ответ"))
+    context.add_user("hello")
+    context.add_assistant(ChatResponse(content="response"))
     manual = len(json.dumps({"role": "system", "content": context.system_prompt()},
                             ensure_ascii=False))
     manual += sum(len(json.dumps(m, ensure_ascii=False)) for m in context.messages)
@@ -201,14 +201,14 @@ def test_close_dangling_tool_calls(config, skills, workspace):
     context.add_user("x")
     context.add_assistant(ChatResponse(tool_calls=[ToolCall(id="c1", name="echo",
                                                            arguments="{}")]))
-    context.close_dangling_tool_calls("отменено")
+    context.close_dangling_tool_calls("cancelled")
     tools = [m for m in context.messages if m.get("role") == "tool"]
     assert len(tools) == 1 and tools[0]["tool_call_id"] == "c1"
 
 
 def test_tool_guide_off_by_default(config, skills, workspace):
     context = ConversationContext(config, None, skills)
-    assert "Справочник инструментов" not in context.system_prompt()
+    assert "Tool reference" not in context.system_prompt()
 
 
 def test_tool_guide_injected_when_enabled(config, skills, workspace):
@@ -218,18 +218,18 @@ def test_tool_guide_injected_when_enabled(config, skills, workspace):
     guide = build_tool_guide(registry.schemas())
     context = ConversationContext(config, None, skills, tool_guide=guide)
     prompt = context.system_prompt()
-    assert "Справочник инструментов" in prompt
+    assert "Tool reference" in prompt
     assert "read_file" in prompt and "edit_file" in prompt
     assert "old_text" in prompt
 
 
 def test_system_md_replaces_base_prompt(config, skills, workspace):
     (workspace / ".aisha").mkdir(exist_ok=True)
-    (workspace / ".aisha" / "SYSTEM.md").write_text("Ты — кастомный ассистент.", encoding="utf-8")
+    (workspace / ".aisha" / "SYSTEM.md").write_text("You are a custom assistant.", encoding="utf-8")
     context = ConversationContext(config, None, skills)
     prompt = context.system_prompt()
-    assert prompt.startswith("Ты — кастомный ассистент.")
-    assert "Ты — Aisha" not in prompt
+    assert prompt.startswith("You are a custom assistant.")
+    assert "You are Aisha" not in prompt
 
 
 def test_system_md_still_appends_agents_md(config, skills, workspace):
@@ -240,7 +240,7 @@ def test_system_md_still_appends_agents_md(config, skills, workspace):
     prompt = context.system_prompt()
     assert prompt.startswith("CUSTOM")
     assert "AGENTS CONTENT" in prompt
-    assert "## Инструкции проекта" in prompt
+    assert "## Project instructions" in prompt
 
 
 async def test_silent_tool_skips_events(config, skills, workspace):
@@ -275,17 +275,17 @@ async def test_debug_emits_request_response_and_tool_dumps(config, skills, works
     config.ui.debug = True
     client = FakeClient([
         ChatResponse(tool_calls=[ToolCall(id="c1", name="echo", arguments='{"text": "hi"}')]),
-        ChatResponse(content="готово", reasoning="обдумываю"),
+        ChatResponse(content="done", reasoning="thinking"),
     ])
     events = FakeEvents()
     agent = make_agent(config, skills, workspace, client, events)
-    result = await agent.run("позови echo")
-    assert result == "готово"
+    result = await agent.run("call echo")
+    assert result == "done"
     titles = [title for title, _ in events.debugs]
     assert "→ model" in titles
     assert "← model" in titles
     assert any(title.startswith("tool:") for title in titles)
     request = [body for title, body in events.debugs if title == "→ model"][0]
-    assert "user" in request and "позови echo" in request
+    assert "user" in request and "call echo" in request
     response = [body for title, body in events.debugs if title == "← model"][-1]
-    assert "обдумываю" in response
+    assert "thinking" in response

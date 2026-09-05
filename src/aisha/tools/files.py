@@ -35,7 +35,7 @@ def resolve_path(raw: str, ctx: ToolContext, *, write: bool) -> tuple[Path, bool
             else ctx.config.tools.allow_read_outside_workspace
         )
         if not allowed:
-            raise ToolPermissionError(f"Путь за пределами workspace: {resolved}")
+            raise ToolPermissionError(f"Path outside workspace: {resolved}")
     return resolved, inside
 
 
@@ -43,11 +43,11 @@ def _read_text(path: Path, limit_bytes: int) -> str:
     size = path.stat().st_size
     if size > limit_bytes * 4:
         raise ToolValidationError(
-            f"Файл слишком большой ({human_size(size)}); используй offset/limit или grep"
+            f"File is too large ({human_size(size)}); use offset/limit or grep"
         )
     data = path.read_bytes()
     if b"\x00" in data[:8192]:
-        raise ToolValidationError("Файл выглядит бинарным")
+        raise ToolValidationError("File appears to be binary")
     try:
         return data.decode("utf-8")
     except UnicodeDecodeError:
@@ -56,9 +56,9 @@ def _read_text(path: Path, limit_bytes: int) -> str:
 
 async def _confirm_outside_write(ctx: ToolContext, path: Path, action: str) -> None:
     await require_confirmation(ctx, ConfirmRequest(
-        title="Запись за пределами workspace",
-        details=[("Действие", action), ("Путь", str(path))],
-        reason="файл находится вне рабочей директории",
+        title="Write outside workspace",
+        details=[("Action", action), ("Path", str(path))],
+        reason="file is outside the workspace directory",
         key=f"write_outside:{path.parent}",
     ))
 
@@ -78,17 +78,17 @@ class ReadFileTool(Tool):
     name = "read_file"
     read_only = True
     description = (
-        "Прочитать текстовый файл (UTF-8). Обязательный аргумент: path — путь к файлу "
-        "относительно workspace. Необязательные: offset (номер первой строки, с 0) и limit "
-        "(сколько строк вернуть, по умолчанию 500). Перед любой правкой файла сначала прочитай "
-        "его этим инструментом. Пример: read_file(path=\"src/main.py\", offset=0, limit=100)."
+        "Read a text file (UTF-8). Required argument: path — file path relative to the workspace. "
+        "Optional: offset (first line number, 0-based) and limit (how many lines to return, "
+        "default 500). Always read a file with this tool before editing it. "
+        "Example: read_file(path=\"src/main.py\", offset=0, limit=100)."
     )
     parameters = {
         "type": "object",
         "properties": {
-            "path": {"type": "string", "description": "Путь к файлу (относительно workspace)"},
-            "offset": {"type": "integer", "description": "Первая строка, с 0"},
-            "limit": {"type": "integer", "description": "Максимум строк"},
+            "path": {"type": "string", "description": "File path (relative to workspace)"},
+            "offset": {"type": "integer", "description": "First line, 0-based"},
+            "limit": {"type": "integer", "description": "Max lines to return"},
         },
         "required": ["path"],
     }
@@ -96,7 +96,7 @@ class ReadFileTool(Tool):
     async def run(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         path, _ = resolve_path(args["path"], ctx, write=False)
         if not path.is_file():
-            return ToolResult.failure("FileNotFoundError", f"Файл не найден: {args['path']}")
+            return ToolResult.failure("FileNotFoundError", f"File not found: {args['path']}")
         max_chars = ctx.config.tools.max_output_chars
         text = _read_text(path, max_chars)
         lines = text.splitlines(keepends=True)
@@ -111,22 +111,22 @@ class ReadFileTool(Tool):
             "path": _rel(path, ctx), "content": content, "lines_total": len(lines),
             "offset": offset, "returned": len(chunk), "size_bytes": path.stat().st_size,
         }
-        summary = f"{len(lines)} строк, {human_size(path.stat().st_size)}"
+        summary = f"{len(lines)} lines, {human_size(path.stat().st_size)}"
         if truncated:
-            summary += f" (показано {len(chunk)} с {offset})"
+            summary += f" (showing {len(chunk)} from {offset})"
         return ToolResult.success(data, summary, truncated=truncated)
 
 
 class WriteFileTool(Tool):
     name = "write_file"
     description = (
-        "Создать новый файл или полностью перезаписать существующий (атомарно). Обязательные "
-        "аргументы: path (путь к файлу) и content (полное содержимое файла одной строкой). "
-        "Необязательный: create_dirs=true создаёт родительские каталоги. Для новых файлов "
-        "используй write_file, для точечных правок существующих — edit_file. Не пиши за один "
-        "вызов файлы длиннее ~300 строк: вывод ограничен токенами и обрежется посередине — "
-        "пиши большие файлы частями (скелет write_file, продолжение edit_file). "
-        "Пример: write_file(path=\"notes.txt\", content=\"Привет\\n\")."
+        "Create a new file or fully overwrite an existing one (atomically). Required arguments: "
+        "path (file path) and content (full file contents as a single string). "
+        "Optional: create_dirs=true creates parent directories. For new files use write_file, "
+        "for targeted edits of existing files — edit_file. Do not write files longer than ~300 "
+        "lines in a single call: output is limited by tokens and will be truncated mid-way — "
+        "write large files in parts (skeleton with write_file, then extend with edit_file). "
+        "Example: write_file(path=\"notes.txt\", content=\"Hello\\n\")."
     )
     parameters = {
         "type": "object",
@@ -134,7 +134,7 @@ class WriteFileTool(Tool):
             "path": {"type": "string"},
             "content": {"type": "string"},
             "create_dirs": {"type": "boolean",
-                            "description": "Создавать родительские каталоги (по умолчанию true)"},
+                            "description": "Create parent directories (default true)"},
         },
         "required": ["path", "content"],
     }
@@ -144,43 +144,43 @@ class WriteFileTool(Tool):
         if not inside:
             await _confirm_outside_write(ctx, path, "write_file")
         if path.is_dir():
-            return ToolResult.failure("IsADirectoryError", f"Это каталог: {args['path']}")
+            return ToolResult.failure("IsADirectoryError", f"Path is a directory: {args['path']}")
         if not path.parent.exists():
             if args.get("create_dirs", True):
                 path.parent.mkdir(parents=True, exist_ok=True)
             else:
                 return ToolResult.failure("FileNotFoundError",
-                                          f"Каталог не существует: {path.parent}")
+                                          f"Directory does not exist: {path.parent}")
         existed = path.exists()
         content: str = args["content"]
         atomic_write_text(path, content)
-        action = "перезаписан" if existed else "создан"
+        action = "overwritten" if existed else "created"
         data = {"path": _rel(path, ctx), "action": action, "bytes": len(content.encode("utf-8")),
                 "lines": content.count("\n") + (1 if content and not content.endswith("\n") else 0)}
-        return ToolResult.success(data, f"{action}, {data['lines']} строк")
+        return ToolResult.success(data, f"{action}, {data['lines']} lines")
 
 
 class EditFileTool(Tool):
     name = "edit_file"
     description = (
-        "Точечная замена фрагмента текста в существующем файле. Обязательные аргументы: "
-        "path (путь к файлу), old_text (точный заменяемый фрагмент, скопированный дословно "
-        "из read_file вместе с отступами и переносами строк) и new_text (новый текст вместо "
-        "old_text). old_text должен встречаться ровно expected_replacements раз (по умолчанию "
-        "1), иначе файл не изменится. Сначала прочитай файл через read_file, затем скопируй "
-        "точный фрагмент в old_text. Пример: edit_file(path=\"src/app.py\", "
+        "Targeted text replacement in an existing file. Required arguments: "
+        "path (file path), old_text (exact fragment to replace, copied verbatim from read_file "
+        "including indentation and line breaks) and new_text (replacement for old_text). "
+        "old_text must occur exactly expected_replacements times (default 1), otherwise the "
+        "file will not be changed. First read the file via read_file, then copy the exact "
+        "fragment into old_text. Example: edit_file(path=\"src/app.py\", "
         "old_text=\"return 1\", new_text=\"return 2\")."
     )
     parameters = {
         "type": "object",
         "properties": {
-            "path": {"type": "string", "description": "Путь к файлу (относительно workspace)"},
+            "path": {"type": "string", "description": "File path (relative to workspace)"},
             "old_text": {"type": "string",
-                         "description": "Точный заменяемый фрагмент (дословная копия из файла)"},
+                         "description": "Exact fragment to replace (verbatim copy from file)"},
             "new_text": {"type": "string",
-                         "description": "Новый текст, который заменит old_text"},
+                         "description": "New text to replace old_text with"},
             "expected_replacements": {"type": "integer",
-                                      "description": "Сколько раз должен встретиться old_text"},
+                                      "description": "How many times old_text should occur"},
         },
         "required": ["path", "old_text", "new_text"],
     }
@@ -190,39 +190,39 @@ class EditFileTool(Tool):
         if not inside:
             await _confirm_outside_write(ctx, path, "edit_file")
         if not path.is_file():
-            return ToolResult.failure("FileNotFoundError", f"Файл не найден: {args['path']}")
+            return ToolResult.failure("FileNotFoundError", f"File not found: {args['path']}")
         old, new = args["old_text"], args["new_text"]
         if not old:
-            return ToolResult.failure("ToolValidationError", "old_text не может быть пустым")
+            return ToolResult.failure("ToolValidationError", "old_text cannot be empty")
         expected = int(args.get("expected_replacements", 1))
         text = _read_text(path, ctx.config.tools.max_output_chars * 4)
         count = text.count(old)
         if count == 0:
             return ToolResult.failure("ToolValidationError",
-                                      "old_text не найден в файле; файл не изменён")
+                                      "old_text not found in file; file unchanged")
         if count != expected:
             return ToolResult.failure(
                 "ToolValidationError",
-                f"Найдено {count} совпадений, ожидалось {expected}; файл не изменён. "
-                "Уточни old_text или укажи expected_replacements.",
+                f"Found {count} matches, expected {expected}; file unchanged. "
+                "Refine old_text or set expected_replacements.",
             )
         atomic_write_text(path, text.replace(old, new))
         return ToolResult.success({"path": _rel(path, ctx), "replacements": count},
-                                  f"{count} замена(ы)")
+                                  f"{count} replacement(s)")
 
 
 class ListDirTool(Tool):
     name = "list_dir"
     read_only = True
     description = (
-        "Показать содержимое каталога (имена, тип, размер). Необязательный аргумент path "
-        "(каталог, по умолчанию '.'). show_hidden=true покажет скрытые файлы; limit — максимум "
-        "записей. Пример: list_dir(path=\"src\")."
+        "List directory contents (names, type, size). Optional argument path "
+        "(directory, default '.'). show_hidden=true shows hidden files; limit — max entries. "
+        "Example: list_dir(path=\"src\")."
     )
     parameters = {
         "type": "object",
         "properties": {
-            "path": {"type": "string", "description": "Каталог, по умолчанию '.'"},
+            "path": {"type": "string", "description": "Directory, default '.'"},
             "show_hidden": {"type": "boolean"},
             "limit": {"type": "integer"},
         },
@@ -231,7 +231,7 @@ class ListDirTool(Tool):
     async def run(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         path, _ = resolve_path(args.get("path", "."), ctx, write=False)
         if not path.is_dir():
-            return ToolResult.failure("NotADirectoryError", f"Каталог не найден: {path}")
+            return ToolResult.failure("NotADirectoryError", f"Directory not found: {path}")
         limit = int(args.get("limit", 500))
         show_hidden = bool(args.get("show_hidden", False))
         entries: list[dict[str, Any]] = []
@@ -251,7 +251,7 @@ class ListDirTool(Tool):
         dirs = sum(1 for e in entries if e["type"] == "dir")
         return ToolResult.success(
             {"path": _rel(path, ctx), "entries": entries},
-            f"{dirs} каталогов, {len(entries) - dirs} файлов", truncated=truncated,
+            f"{dirs} dirs, {len(entries) - dirs} files", truncated=truncated,
         )
 
 
@@ -259,18 +259,18 @@ class GlobTool(Tool):
     name = "glob"
     read_only = True
     description = (
-        "Найти файлы по маске имён. Обязательный аргумент: pattern, например '**/*.py' или "
-        "'src/**/*.php'. Необязательный: path — база поиска (по умолчанию '.'). Возвращает список "
-        "путей к файлам. Пример: glob(pattern=\"src/**/*.py\")."
+        "Find files by glob pattern. Required argument: pattern, e.g. '**/*.py' or "
+        "'src/**/*.php'. Optional: path — search base (default '.'). Returns a list of "
+        "file paths. Example: glob(pattern=\"src/**/*.py\")."
     )
     parameters = {
         "type": "object",
         "properties": {
             "pattern": {"type": "string"},
-            "path": {"type": "string", "description": "База поиска, по умолчанию '.'"},
+            "path": {"type": "string", "description": "Search base, default '.'"},
             "limit": {"type": "integer"},
             "include_ignored": {"type": "boolean",
-                                "description": "Не исключать .git, node_modules, vendor и т.п."},
+                                "description": "Do not exclude .git, node_modules, vendor, etc."},
         },
         "required": ["pattern"],
     }
@@ -278,7 +278,7 @@ class GlobTool(Tool):
     async def run(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         base, _ = resolve_path(args.get("path", "."), ctx, write=False)
         if not base.is_dir():
-            return ToolResult.failure("NotADirectoryError", f"Каталог не найден: {base}")
+            return ToolResult.failure("NotADirectoryError", f"Directory not found: {base}")
         limit = int(args.get("limit", 200))
         include_ignored = bool(args.get("include_ignored", False))
         found: list[str] = []
@@ -305,30 +305,29 @@ class GlobTool(Tool):
                     break
                 found.append(_rel(resolved, ctx))
         except (ValueError, NotImplementedError, OSError) as exc:
-            return ToolResult.failure("ToolValidationError", f"Некорректная маска: {exc}")
+            return ToolResult.failure("ToolValidationError", f"Invalid pattern: {exc}")
         found.sort()
         return ToolResult.success({"files": found, "count": len(found)},
-                                  f"найдено {len(found)} файлов", truncated=truncated)
+                                  f"found {len(found)} files", truncated=truncated)
 
 
 class GrepTool(Tool):
     name = "grep"
     read_only = True
     description = (
-        "Regex-поиск по содержимому файлов. Обязательный аргумент: pattern (регулярное "
-        "выражение Python re). Необязательные: path (файл или каталог, по умолчанию '.'), "
-        "include (маска имён файлов, например '*.py'), ignore_case=true. Возвращает файл, "
-        "номер строки и текст совпадения. Пример: grep(pattern=\"def foo\", include=\"*.py\", "
-        "path=\"src\")."
+        "Regex search in file contents. Required argument: pattern (Python re regular "
+        "expression). Optional: path (file or directory, default '.'), include (file name "
+        "glob, e.g. '*.py'), ignore_case=true. Returns file, line number and match text. "
+        "Example: grep(pattern=\"def foo\", include=\"*.py\", path=\"src\")."
     )
     parameters = {
         "type": "object",
         "properties": {
-            "pattern": {"type": "string", "description": "Регулярное выражение (Python re)"},
-            "path": {"type": "string", "description": "Файл или каталог, по умолчанию '.'"},
-            "include": {"type": "string", "description": "Маска файлов, например '*.py'"},
+            "pattern": {"type": "string", "description": "Regular expression (Python re)"},
+            "path": {"type": "string", "description": "File or directory, default '.'"},
+            "include": {"type": "string", "description": "File glob, e.g. '*.py'"},
             "ignore_case": {"type": "boolean"},
-            "limit": {"type": "integer", "description": "Максимум совпадений (по умолчанию 100)"},
+            "limit": {"type": "integer", "description": "Max matches (default 100)"},
             "include_ignored": {"type": "boolean"},
         },
         "required": ["pattern"],
@@ -338,7 +337,7 @@ class GrepTool(Tool):
         try:
             regex = re.compile(args["pattern"], re.IGNORECASE if args.get("ignore_case") else 0)
         except re.error as exc:
-            return ToolResult.failure("ToolValidationError", f"Некорректное regex: {exc}")
+            return ToolResult.failure("ToolValidationError", f"Invalid regex: {exc}")
         root, _ = resolve_path(args.get("path", "."), ctx, write=False)
         include = args.get("include") or "*"
         limit = int(args.get("limit", 100))
@@ -378,5 +377,5 @@ class GrepTool(Tool):
                 break
         return ToolResult.success(
             {"matches": matches, "count": len(matches), "files_scanned": files_scanned},
-            f"найдено {len(matches)} совпадений в {files_scanned} файлах", truncated=truncated,
+            f"found {len(matches)} matches in {files_scanned} files", truncated=truncated,
         )
