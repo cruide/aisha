@@ -17,13 +17,13 @@ class TodoWriteTool(Tool):
     read_only = True
     description = (
         "Update the current session's task list (full replacement). Required argument: "
-        "items — array of objects like {text: string, status: pending|in_progress|done|cancelled}. "
-        "Example: todowrite(items=[{text: 'write tests', status: 'pending'}])."
+        "todos — array of objects like {text: string, status: pending|in_progress|done|cancelled}. "
+        "Example: todowrite(todos=[{text: 'write tests', status: 'pending'}])."
     )
     parameters = {
         "type": "object",
         "properties": {
-            "items": {
+            "todos": {
                 "type": "array",
                 "items": {
                     "type": "object",
@@ -35,12 +35,12 @@ class TodoWriteTool(Tool):
                 },
             }
         },
-        "required": ["items"],
+        "required": ["todos"],
     }
 
     async def run(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         items: list[dict[str, str]] = []
-        for raw in args["items"]:
+        for raw in args["todos"]:
             if not isinstance(raw, dict) or not str(raw.get("text", "")).strip():
                 raise ToolValidationError("each item must contain a non-empty text")
             status = str(raw.get("status", "pending"))

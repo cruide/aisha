@@ -63,6 +63,8 @@ def fmt_int(n: int) -> str:
 
 
 def fmt_ctx(n: int) -> str:
+    if n % (1024 * 1024) == 0:
+        return f"{n // (1024 * 1024)}M"
     if n % 1024 == 0:
         return f"{n // 1024}K"
     return fmt_int(n)
