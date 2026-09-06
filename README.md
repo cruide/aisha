@@ -269,3 +269,6 @@ src/aisha/
 ├── errors.py     # exception hierarchy
 └── tools/        # tool implementations (base, files, shell, web, extras)
 ```
+
+For a detailed picture of modules, non-obvious decisions, and pitfalls, see
+[`PROJECT.md`](PROJECT.md).
