@@ -32,11 +32,24 @@ class ToolCall:
             raise ValueError("arguments must be a JSON object")
         return obj
 
+    def _valid_arguments(self) -> str:
+        """Return arguments as a valid JSON object string, or "{}" if malformed.
+
+        A truncated stream can leave arguments as invalid JSON; sending them back to
+        the server verbatim would make it fail with HTTP 500. Normalise to "{}".
+        """
+        raw = (self.arguments or "").strip() or "{}"
+        try:
+            obj = json.loads(raw)
+        except ValueError:
+            return "{}"
+        return raw if isinstance(obj, dict) else "{}"
+
     def to_message(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "type": "function",
-            "function": {"name": self.name, "arguments": self.arguments or "{}"},
+            "function": {"name": self.name, "arguments": self._valid_arguments()},
         }
 
 

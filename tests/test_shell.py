@@ -35,5 +35,6 @@ async def test_run_powershell_auto(ctx):
 async def test_ask_mode_without_confirm_fn_is_denied(ctx):
     from aisha.errors import ToolPermissionError
 
+    ctx.config.tools.permission = "ask"
     with pytest.raises(ToolPermissionError):
         await RunCommandTool().run({"command": "echo hi"}, ctx)

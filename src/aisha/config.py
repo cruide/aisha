@@ -26,7 +26,7 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "request_timeout": 600.0,
     },
     "llm": {
-        "temperature": 0.6,
+        "temperature": 0.7,
         "top_p": None,
         "top_k": None,
         "repeat_penalty": None,

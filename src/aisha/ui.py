@@ -52,6 +52,7 @@ COMMANDS = {
 }
 
 PT_STYLE = Style.from_dict({
+    "": "#90EE90",
     "prompt": "bold #d75fff",
     "bottom-toolbar": "noreverse bg:default #8a8a8a",
     "bottom-toolbar.rule": "noreverse bg:default #444444",
@@ -194,19 +195,18 @@ class ConsoleUI:
 
         body = Text()
 
-        body.append("AISHA ", style="bold yellow")
-        body.append(f"v{__version__}", style="white")
+        body.append("AISHA ", style="bold #FFA500")
+        body.append(f"v{__version__}", style="#FFFFFF")
         body.append(" · MODEL: ", style="cyan")
         body.append(f"{model}", style="green")
         body.append(" · N_CTX: ", style="cyan")
         body.append(f"{fmt_ctx(cfg.llm.context_window)}\n", style="green")
-        body.append(f"Workspace: {cfg.workspace}\n", style="dim")
-        body.append(
-            f"{cfg.server.base_url} · {mode} · Shell: {cfg.tools.shell_type}\n", style="dim"
-        )
+        body.append("Workspace: ", style="dim")
+        body.append(f"{cfg.workspace}\n", style="#FF7F50")
+        body.append(f"{cfg.server.base_url} · {mode} · Shell: {cfg.tools.shell_type}\n", style="dim")
         body.append(
             "/help — commands · Tab — paths · Ctrl+↑/↓ — previous inputs · Ctrl+C — interrupt",
-            style="dim",
+            style="#F5F5DC",
         )
 
         self.console.print(Panel(body, border_style="magenta", padding=(0, 1)))

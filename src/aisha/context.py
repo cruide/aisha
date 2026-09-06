@@ -8,6 +8,7 @@ import platform
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from datetime import datetime
 
 from aisha.client import ChatResponse
 from aisha.config import Config
@@ -29,6 +30,8 @@ def _read_md(path: Path) -> tuple[str, bool]:
         return text[:AGENTS_MD_LIMIT], True
     return text, False
 
+
+
 BASE_PROMPT = """\
 You are Aisha, a local console AI agent for working with source code, files, the command \
 line and the internet. Reply in {communication_language}, concisely and to the point, \
@@ -39,6 +42,7 @@ using Markdown and code highlighting. Make all comments in the source code in En
 - Default shell: {shell}
 - Workspace (relative paths are resolved from it): {workspace}
 - Mode: {mode}
+- Current date and time: {current_datetime}
 
 ## Tool usage rules
 1. Call tools only via native tool calling. Never fabricate their results.
@@ -213,6 +217,9 @@ class ConversationContext:
                 f"Load full text via skill(name):\n{skills_index}" if skills_index
                 else "No skills found."
             )
+
+            current_datetime = datetime.now()
+
             prompt = BASE_PROMPT.format(
                 communication_language=self.config.llm.communication_language,
                 os_name=f"{platform.system()} {platform.release()}",
@@ -221,6 +228,7 @@ class ConversationContext:
                 mode=mode,
                 memory_section=memory_section,
                 skills_section=skills_section,
+                current_datetime=current_datetime,
             )
         if self.tool_guide:
             prompt += f"\n{self.tool_guide}\n"

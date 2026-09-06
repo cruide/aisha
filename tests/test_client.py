@@ -54,6 +54,19 @@ async def test_text_and_fragmented_tool_calls():
     assert resp.usage["prompt_tokens"] == 10
 
 
+def test_tool_call_sanitizes_malformed_arguments():
+    from aisha.client import ToolCall
+
+    call = ToolCall(id="c1", name="read_file", arguments='"D:\\L')
+    assert call.to_message()["function"]["arguments"] == "{}"
+
+    valid = ToolCall(id="c2", name="read_file", arguments='{"path": "a.py"}')
+    assert valid.to_message()["function"]["arguments"] == '{"path": "a.py"}'
+
+    empty = ToolCall(id="c3", name="read_file")
+    assert empty.to_message()["function"]["arguments"] == "{}"
+
+
 async def test_stream_options_fallback_and_retry(monkeypatch):
     calls = []
 

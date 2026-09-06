@@ -21,7 +21,7 @@ def test_defaults_and_priority(tmp_path: Path, monkeypatch):
     assert cfg.tools.shell_timeout == 60  # project > global
     assert cfg.server.model == "x"  # env
     assert cfg.llm.temperature == 0.1  # cli > everything
-    assert cfg.tools.permission == "ask"
+    assert cfg.tools.permission == "auto"
 
 
 def test_project_cannot_enable_auto(tmp_path: Path, monkeypatch):

@@ -135,7 +135,16 @@ class AgentLoop:
                 ("frequency_penalty", llm.frequency_penalty),
             ) if value is not None
         }
-        remaining = llm.context_window - est_in
+        # est_in covers only the message history; the tool schemas are sent with
+        # every request but are not counted there. Reserve space for them plus a
+        # safety margin, otherwise max_tokens overshoots and the server truncates
+        # tool-call JSON mid-stream.
+        overhead = max(512, llm.context_window // 16)
+        if tools:
+            overhead += int(
+                len(json.dumps(tools, ensure_ascii=False)) / self.context.stats.chars_per_token
+            )
+        remaining = llm.context_window - est_in - overhead
         max_tokens = max(256, min(llm.max_output_tokens, remaining))
         if self.config.ui.debug:
             self.events.on_debug("→ model", self._format_request(messages, est_in))
