@@ -67,9 +67,7 @@ class WebSearchTool(Tool):
     name = "web_search"
     read_only = True
     description = (
-        "Web search (DuckDuckGo). Required argument: query — search query. "
-        "Optional: max_results (number of results). Returns titles, URLs and "
-        "snippets. Example: web_search(query=\"how to set up llama.cpp\")."
+        "Search the web and return titles, URLs and snippets. Example: web_search(query=\"how to set up llama.cpp\")."
     )
     parameters = {
         "type": "object",
@@ -109,9 +107,7 @@ class WebFetchTool(Tool):
     name = "web_fetch"
     read_only = True
     description = (
-        "Fetch a web page by URL and return extracted text. Required argument: url — "
-        "full address with http/https. Optional: max_chars (text character limit). "
-        "Example: web_fetch(url=\"https://example.com/docs\")."
+        "Fetch a web page and return extracted text. Example: web_fetch(url=\"https://example.com/docs\")."
     )
     parameters = {
         "type": "object",

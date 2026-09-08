@@ -16,8 +16,7 @@ class TodoWriteTool(Tool):
     name = "todowrite"
     read_only = True
     description = (
-        "Update the current session's task list (full replacement). Required argument: "
-        "todos — array of objects like {text: string, status: pending|in_progress|done|cancelled}. "
+        "Replace the current task list. Use only for tasks with at least three steps. "
         "Example: todowrite(todos=[{text: 'write tests', status: 'pending'}])."
     )
     parameters = {
@@ -58,9 +57,7 @@ class AskUserTool(Tool):
     name = "ask_user"
     read_only = True
     description = (
-        "Ask the user a clarifying question and wait for an answer. Required argument: "
-        "question — the question text. Optional: options (list of choices) and allow_free_text. "
-        "Use when a task is ambiguous instead of guessing."
+        "Show a clarification question and wait for the user."
     )
     parameters = {
         "type": "object",

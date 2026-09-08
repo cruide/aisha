@@ -173,6 +173,7 @@ class ConsoleUI:
                 f"CTX: {fmt_short(stats.ctx)} (~{pct}%)"
                 f" | Last: ↑{fmt_short(stats.last_in)} ↓{fmt_short(stats.last_out)}"
                 f" | Session: ↑{fmt_short(stats.session_in)} ↓{fmt_short(stats.session_out)}"
+                f" | Cost: ~{round(stats.cost, 2)}"
             )
             if self.config.read_only:
                 status += " | read-only"

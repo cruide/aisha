@@ -265,9 +265,7 @@ class ReadFileTool(Tool):
     name = "read_file"
     read_only = True
     description = (
-        "Read a text file (UTF-8). Required argument: path — file path relative to the workspace. "
-        "Optional: offset (first line number, 0-based) and limit (how many lines to return, "
-        "default 300). Always read a file with this tool before editing it. "
+        "Read UTF-8 file lines. path is workspace-relative; offset=0 and limit=300 by default. "
         "Example: read_file(path=\"src/main.py\", offset=0, limit=100)."
     )
     parameters = {
@@ -330,12 +328,7 @@ class ReadFileTool(Tool):
 class WriteFileTool(Tool):
     name = "write_file"
     description = (
-        "Create a new file or fully overwrite an existing one (atomically). Required arguments: "
-        "path (file path) and content (full file contents as a single string). "
-        "Optional: create_dirs=true creates parent directories. For new files use write_file, "
-        "for targeted edits of existing files — edit_file. Do not write files longer than ~300 "
-        "lines in a single call: output is limited by tokens and will be truncated mid-way — "
-        "write large files in parts (skeleton with write_file, then extend with edit_file). "
+        "Create or fully overwrite a file atomically. create_dirs defaults to true. "
         "Example: write_file(path=\"notes.txt\", content=\"Hello\\n\")."
     )
     parameters = {
@@ -374,13 +367,8 @@ class WriteFileTool(Tool):
 class EditFileTool(Tool):
     name = "edit_file"
     description = (
-        "Targeted text replacement in an existing file. Required arguments: "
-        "path (file path), old_text (exact fragment to replace, copied verbatim from read_file "
-        "including indentation and line breaks) and new_text (replacement for old_text). "
-        "old_text must occur exactly expected_replacements times (default 1), otherwise the "
-        "file will not be changed. First read the file via read_file, then copy the exact "
-        "fragment into old_text. Example: edit_file(path=\"src/app.py\", "
-        "old_text=\"return 1\", new_text=\"return 2\")."
+        "Replace exact old_text in a previously read file. expected_replacements defaults to 1. "
+        "Example: edit_file(path=\"src/app.py\", old_text=\"return 1\", new_text=\"return 2\")."
     )
     parameters = {
         "type": "object",
@@ -445,9 +433,7 @@ class ListDirTool(Tool):
     name = "list_dir"
     read_only = True
     description = (
-        "List directory contents (names, type, size). Optional argument path "
-        "(directory, default '.'). show_hidden=true shows hidden files; limit — max entries. "
-        "Example: list_dir(path=\"src\")."
+        "List directory entries. path defaults to \".\". Example: list_dir(path=\"src\")."
     )
     parameters = {
         "type": "object",
@@ -491,9 +477,7 @@ class GlobTool(Tool):
     name = "glob"
     read_only = True
     description = (
-        "Find files by glob pattern. Required argument: pattern, e.g. '**/*.py' or "
-        "'src/**/*.php'. Optional: path — search base (default '.'). Returns a list of "
-        "file paths. Example: glob(pattern=\"src/**/*.py\")."
+        "Find file paths by glob pattern. path defaults to \".\". Example: glob(pattern=\"src/**/*.py\")."
     )
     parameters = {
         "type": "object",
@@ -530,9 +514,7 @@ class GrepTool(Tool):
     name = "grep"
     read_only = True
     description = (
-        "Regex search in file contents. Required argument: pattern (Python re regular "
-        "expression). Optional: path (file or directory, default '.'), include (file name "
-        "glob, e.g. '*.py'), ignore_case=true. Returns file, line number and match text. "
+        "Search file contents using a Python regular expression. path defaults to \".\"; limit defaults to 100. "
         "Example: grep(pattern=\"def foo\", include=\"*.py\", path=\"src\")."
     )
     parameters = {
