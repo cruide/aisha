@@ -6,9 +6,9 @@ from __future__ import annotations
 import json
 import platform
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
-from datetime import datetime
 
 from aisha.client import ChatResponse
 from aisha.config import Config
@@ -23,7 +23,7 @@ def _read_md(path: Path) -> tuple[str, bool]:
     if not path.is_file():
         return "", False
     try:
-        text = path.read_text(encoding="utf-8", errors="replace")
+        text = path.read_text(encoding="utf-8-sig", errors="replace")
     except OSError:
         return "", False
     if len(text) > AGENTS_MD_LIMIT:
@@ -123,7 +123,7 @@ class TokenStats:
     session_in: int = 0
     session_out: int = 0
     approximate: bool = True
-    chars_per_token: float = 3.0
+    chars_per_token: float = 2.5
 
     def record(
         self, usage: dict[str, int] | None, est_in: int, est_out: int, chars_in: int
@@ -133,7 +133,7 @@ class TokenStats:
             self.last_out = int(usage.get("completion_tokens", 0))
             self.approximate = False
             if self.last_in > 0 and chars_in > 0:
-                self.chars_per_token = max(1.5, min(6.0, chars_in / self.last_in))
+                self.chars_per_token = max(1.0, min(6.0, chars_in / self.last_in))
         else:
             self.last_in, self.last_out, self.approximate = est_in, est_out, True
         self.session_in += self.last_in
@@ -197,7 +197,7 @@ class ConversationContext:
     def _build_system_prompt(self) -> str:
         tools_cfg = self.config.tools
         if self.system_md:
-            prompt = self.system_md
+            prompt = self.system_md + "\n\n" + self._memory_skills_block()
         else:
             if self.config.read_only:
                 mode = "read-only (file writes, shell and memory changes are disabled)"
@@ -240,6 +240,23 @@ class ConversationContext:
             prompt += f"\n## Current task list\n{lines}\n"
         return prompt
 
+    def _memory_skills_block(self) -> str:
+        """Compact memory/skills index appended after a custom SYSTEM.md prompt."""
+        lines: list[str] = []
+        if self.memory is not None:
+            index = self.memory.index_text()
+            body = index if index else "No memory blocks yet."
+            lines.append(
+                f"## Persistent memory\nAvailable blocks (use memory_get to read):\n{body}"
+            )
+        skills_index = self.skills.index_text()
+        skills_body = (
+            f"Load full text via skill(name):\n{skills_index}" if skills_index
+            else "No skills found."
+        )
+        lines.append(f"## Skills\n{skills_body}")
+        return "\n\n".join(lines)
+
     def all_messages(self) -> list[dict[str, Any]]:
         return [{"role": "system", "content": self.system_prompt()}, *self.messages]
 
@@ -255,6 +272,14 @@ class ConversationContext:
 
     def add_assistant(self, response: ChatResponse) -> None:
         msg = response.to_message()
+        self.messages.append(msg)
+        self._messages_chars += self._chars(msg)
+
+    def add_interrupted_assistant(self, response: ChatResponse) -> None:
+        """Record a partial assistant reply without its tool_calls (they were not executed)."""
+        msg: dict[str, Any] = {"role": "assistant"}
+        if response.content:
+            msg["content"] = response.content
         self.messages.append(msg)
         self._messages_chars += self._chars(msg)
 
@@ -301,6 +326,12 @@ class ConversationContext:
                         "content": "Acknowledged, continuing with the summary in mind."})
         self.messages = new + keep
         self._messages_chars = sum(self._chars(m) for m in self.messages)
+        # stats.ctx holds the size of the last request, which was measured before
+        # compaction and is now stale. Reset it so needs_compaction() re-evaluates
+        # the compacted history from its char-based estimate instead of a stale,
+        # pre-compaction number (otherwise compaction would loop forever).
+        self.stats.ctx = 0
+        self.stats.approximate = True
 
     # ---------------------------------------------------------------- tokens
     def sent_chars(self) -> int:

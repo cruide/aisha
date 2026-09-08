@@ -134,9 +134,10 @@ request_timeout = 600
 [llm]
 temperature = 0.6
 max_output_tokens = 65536
-context_window = 65536
+context_window = 65536     # ручная настройка: должно совпадать с -c llama-server; дефолт 32768
 context_soft_limit = 0.85
 max_tool_iterations = 25
+enable_thinking = null          # true/false — управление thinking для Qwen; null = серверное умолчание
 
 [tools]
 shell = true

@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import fnmatch
 import os
 import re
 from pathlib import Path
@@ -13,8 +15,8 @@ from aisha.fsutil import atomic_write_text, human_size, is_inside
 from aisha.tools.base import ConfirmRequest, Tool, ToolContext, ToolResult, require_confirmation
 
 DEFAULT_EXCLUDES = frozenset({
-    ".git", ".hg", ".svn", ".idea", ".vscode", "node_modules", "vendor",
-    "__pycache__", ".venv", "venv", ".mypy_cache", ".pytest_cache", ".ruff_cache",
+    ".git", ".hg", ".svn", ".idea", ".vscode", "node_modules", "vendor", ".opencode",
+    "__pycache__", ".venv", "venv", ".mypy_cache", ".pytest_cache", ".ruff_cache", ".aisha",
 })
 MAX_GREP_FILE_BYTES = 2 * 1024 * 1024
 
@@ -39,11 +41,13 @@ def resolve_path(raw: str, ctx: ToolContext, *, write: bool) -> tuple[Path, bool
     return resolved, inside
 
 
-def _read_text(path: Path, limit_bytes: int) -> str:
+def _read_full_text(path: Path, limit_bytes: int) -> str:
+    """Read the whole file; raise a clear error when it exceeds `limit_bytes`."""
     size = path.stat().st_size
-    if size > limit_bytes * 4:
+    if size > limit_bytes:
         raise ToolValidationError(
-            f"File is too large ({human_size(size)}); use offset/limit or grep"
+            f"File is too large for edit_file ({human_size(size)}, limit "
+            f"{human_size(limit_bytes)}); split it into smaller files first"
         )
     data = path.read_bytes()
     if b"\x00" in data[:8192]:
@@ -52,6 +56,62 @@ def _read_text(path: Path, limit_bytes: int) -> str:
         return data.decode("utf-8")
     except UnicodeDecodeError:
         return data.decode("utf-8", errors="replace")
+
+
+def _normalize_lines(text: str) -> str:
+    """Normalize to LF and strip trailing whitespace per line (for near-match detection)."""
+    return "\n".join(line.rstrip() for line in text.replace("\r\n", "\n").split("\n"))
+
+
+def _near_match_count(text: str, old: str) -> int:
+    return _normalize_lines(text).count(_normalize_lines(old))
+
+
+def _read_window(
+    path: Path, offset: int, limit: int, max_chars: int
+) -> tuple[str, int, bool, int | None]:
+    """Read a window of `path` starting at `offset` lines.
+
+    Returns (content, returned_lines, truncated, lines_total). `lines_total` is None
+    when the file was not fully read to EOF, so the exact line count is unknown.
+    A line is never split: if it would exceed the char budget it is dropped and
+    the result is marked truncated.
+    """
+    with path.open("rb") as fh:
+        if b"\x00" in fh.read(8192):
+            raise ToolValidationError("File appears to be binary")
+    parts: list[str] = []
+    returned = 0
+    skipped = 0
+    chars = 0
+    truncated = False
+    reached_eof = False
+    with path.open("r", encoding="utf-8", errors="replace") as fh:
+        for _ in range(offset):
+            line = fh.readline()
+            if line == "":
+                reached_eof = True
+                break
+            skipped += 1
+        if not reached_eof:
+            for line in fh:
+                if returned >= limit:
+                    if fh.readline() == "":
+                        reached_eof = True
+                    else:
+                        truncated = True
+                    break
+                line_chars = len(line)
+                if returned > 0 and chars + line_chars > max_chars:
+                    truncated = True
+                    break
+                parts.append(line)
+                chars += line_chars
+                returned += 1
+            else:
+                reached_eof = True
+    lines_total = skipped + returned if reached_eof else None
+    return "".join(parts), returned, truncated, lines_total
 
 
 async def _confirm_outside_write(ctx: ToolContext, path: Path, action: str) -> None:
@@ -74,13 +134,118 @@ def _skip_dir(name: str, include_ignored: bool) -> bool:
     return not include_ignored and name in DEFAULT_EXCLUDES
 
 
+def _rel_to(path: Path, workspace: Path) -> str:
+    try:
+        return path.relative_to(workspace).as_posix() or "."
+    except ValueError:
+        return str(path)
+
+
+def _glob_match(rel: str, pattern: str) -> bool:
+    """Glob-match a relative POSIX path against a pattern (`*`, `**`, `?`, `[...]`)."""
+    return _seg_match(rel.split("/"), pattern.split("/"))
+
+
+def _seg_match(parts: list[str], pats: list[str]) -> bool:
+    if not pats:
+        return not parts
+    head, tail = pats[0], pats[1:]
+    if head == "**":
+        if _seg_match(parts, tail):
+            return True
+        return bool(parts) and _seg_match(parts[1:], pats)
+    if not parts:
+        return False
+    if fnmatch.fnmatchcase(parts[0], head):
+        return _seg_match(parts[1:], tail)
+    return False
+
+
+def _glob_walk(base: Path, pattern: str, workspace: Path, include_ignored: bool,
+               allow_outside: bool, limit: int) -> tuple[list[str], bool]:
+    """Walk `base` pruning ignored dirs, returning matching files and a truncation flag."""
+    found: list[str] = []
+    truncated = False
+    pat = pattern[2:] if pattern.startswith("./") else pattern
+    pat = pat.rstrip("/")
+    for dirpath, dirnames, filenames in os.walk(base):
+        if not include_ignored:
+            dirnames[:] = [d for d in dirnames if not _skip_dir(d, include_ignored)]
+        for name in filenames:
+            full = Path(dirpath) / name
+            try:
+                rel = full.relative_to(base).as_posix()
+            except ValueError:
+                continue
+            if not _glob_match(rel, pat):
+                continue
+            try:
+                resolved = full.resolve()
+            except OSError:
+                continue
+            if not is_inside(resolved, workspace) and not allow_outside:
+                continue
+            if not resolved.is_file():
+                continue
+            if len(found) >= limit:
+                truncated = True
+                return found, truncated
+            found.append(_rel_to(resolved, workspace))
+    return found, truncated
+
+
+def _grep_walk(root: Path, regex: re.Pattern, include: str, limit: int,
+               include_ignored: bool, workspace: Path, allow_outside: bool
+               ) -> tuple[list[dict[str, Any]], int, bool]:
+    matches: list[dict[str, Any]] = []
+    files_scanned = 0
+    truncated = False
+
+    def iter_files():
+        if root.is_file():
+            yield root
+            return
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames[:] = [d for d in dirnames if not _skip_dir(d, include_ignored)]
+            for name in filenames:
+                if Path(name).match(include):
+                    yield Path(dirpath) / name
+
+    for file in iter_files():
+        try:
+            resolved = file.resolve()
+        except OSError:
+            continue
+        if not is_inside(resolved, workspace) and not allow_outside:
+            continue
+        try:
+            if file.stat().st_size > MAX_GREP_FILE_BYTES:
+                continue
+            data = file.read_bytes()
+        except OSError:
+            continue
+        if b"\x00" in data[:8192]:
+            continue
+        files_scanned += 1
+        for lineno, line in enumerate(data.decode("utf-8", "replace").splitlines(), 1):
+            if regex.search(line):
+                if len(matches) >= limit:
+                    truncated = True
+                    break
+                matches.append({"file": _rel_to(resolved, workspace), "line": lineno,
+                                "text": line.strip()[:300]})
+        if truncated:
+            break
+    return matches, files_scanned, truncated
+
+
 class ReadFileTool(Tool):
     name = "read_file"
     read_only = True
     description = (
         "Read a text file (UTF-8). Required argument: path — file path relative to the workspace. "
         "Optional: offset (first line number, 0-based) and limit (how many lines to return, "
-        "default 500). Always read a file with this tool before editing it. "
+        "default 300). Always read a file with this tool before editing it. "
         "Example: read_file(path=\"src/main.py\", offset=0, limit=100)."
     )
     parameters = {
@@ -98,22 +263,26 @@ class ReadFileTool(Tool):
         if not path.is_file():
             return ToolResult.failure("FileNotFoundError", f"File not found: {args['path']}")
         max_chars = ctx.config.tools.max_output_chars
-        text = _read_text(path, max_chars)
-        lines = text.splitlines(keepends=True)
         offset = max(0, int(args.get("offset", 0)))
-        limit = max(1, int(args.get("limit", 500)))
-        chunk = lines[offset:offset + limit]
-        content = "".join(chunk)
-        truncated = offset + len(chunk) < len(lines)
-        if len(content) > max_chars:
-            content, truncated = content[:max_chars], True
-        data = {
-            "path": _rel(path, ctx), "content": content, "lines_total": len(lines),
-            "offset": offset, "returned": len(chunk), "size_bytes": path.stat().st_size,
+        limit = max(1, int(args.get("limit", 300)))
+        try:
+            content, returned, truncated, lines_total = await asyncio.to_thread(
+                _read_window, path, offset, limit, max_chars
+            )
+        except ToolValidationError as exc:
+            return ToolResult.failure("ToolValidationError", str(exc))
+        size_bytes = path.stat().st_size
+        data: dict[str, Any] = {
+            "path": _rel(path, ctx), "content": content, "offset": offset,
+            "returned": returned, "size_bytes": size_bytes,
+            "lines_total": lines_total, "total_known": lines_total is not None,
         }
-        summary = f"{len(lines)} lines, {human_size(path.stat().st_size)}"
+        if lines_total is not None:
+            summary = f"{lines_total} lines, {human_size(size_bytes)}"
+        else:
+            summary = f"{human_size(size_bytes)}"
         if truncated:
-            summary += f" (showing {len(chunk)} from {offset})"
+            summary += f" (showing {returned} from {offset})"
         return ToolResult.success(data, summary, truncated=truncated)
 
 
@@ -195,18 +364,36 @@ class EditFileTool(Tool):
         if not old:
             return ToolResult.failure("ToolValidationError", "old_text cannot be empty")
         expected = int(args.get("expected_replacements", 1))
-        text = _read_text(path, ctx.config.tools.max_output_chars * 4)
-        count = text.count(old)
+        max_chars = ctx.config.tools.max_output_chars
+        try:
+            text = await asyncio.to_thread(_read_full_text, path, max_chars * 16)
+        except ToolValidationError as exc:
+            return ToolResult.failure("ToolValidationError", str(exc))
+
+        crlf = text.count("\r\n") > text.count("\n") - text.count("\r\n")
+        norm_text = text.replace("\r\n", "\n")
+        norm_old = old.replace("\r\n", "\n")
+        norm_new = new.replace("\r\n", "\n")
+
+        count = norm_text.count(norm_old)
         if count == 0:
-            return ToolResult.failure("ToolValidationError",
-                                      "old_text not found in file; file unchanged")
+            near = _near_match_count(text, old)
+            msg = "old_text not found in file; file unchanged"
+            if near == 1:
+                msg += " (a near-match differs by line endings or trailing spaces)"
+            elif near > 1:
+                msg += f" ({near} near-matches differ by line endings or trailing spaces)"
+            return ToolResult.failure("ToolValidationError", msg)
         if count != expected:
             return ToolResult.failure(
                 "ToolValidationError",
                 f"Found {count} matches, expected {expected}; file unchanged. "
                 "Refine old_text or set expected_replacements.",
             )
-        atomic_write_text(path, text.replace(old, new))
+        new_text = norm_text.replace(norm_old, norm_new)
+        if crlf:
+            new_text = new_text.replace("\n", "\r\n")
+        atomic_write_text(path, new_text)
         return ToolResult.success({"path": _rel(path, ctx), "replacements": count},
                                   f"{count} replacement(s)")
 
@@ -281,31 +468,11 @@ class GlobTool(Tool):
             return ToolResult.failure("NotADirectoryError", f"Directory not found: {base}")
         limit = int(args.get("limit", 200))
         include_ignored = bool(args.get("include_ignored", False))
-        found: list[str] = []
-        truncated = False
         allow_outside = ctx.config.tools.allow_read_outside_workspace
-        try:
-            for path in base.glob(args["pattern"]):
-                try:
-                    resolved = path.resolve()
-                except OSError:
-                    continue
-                if not is_inside(resolved, ctx.workspace) and not allow_outside:
-                    continue
-                try:
-                    rel_parts = resolved.relative_to(base).parts
-                except ValueError:
-                    rel_parts = ()
-                if any(_skip_dir(p, include_ignored) for p in rel_parts[:-1]):
-                    continue
-                if not resolved.is_file():
-                    continue
-                if len(found) >= limit:
-                    truncated = True
-                    break
-                found.append(_rel(resolved, ctx))
-        except (ValueError, NotImplementedError, OSError) as exc:
-            return ToolResult.failure("ToolValidationError", f"Invalid pattern: {exc}")
+        found, truncated = await asyncio.to_thread(
+            _glob_walk, base, args["pattern"], ctx.workspace, include_ignored,
+            allow_outside, limit,
+        )
         found.sort()
         return ToolResult.success({"files": found, "count": len(found)},
                                   f"found {len(found)} files", truncated=truncated)
@@ -342,39 +509,11 @@ class GrepTool(Tool):
         include = args.get("include") or "*"
         limit = int(args.get("limit", 100))
         include_ignored = bool(args.get("include_ignored", False))
-        matches: list[dict[str, Any]] = []
-        files_scanned = 0
-        truncated = False
-
-        def iter_files():
-            if root.is_file():
-                yield root
-                return
-            for dirpath, dirnames, filenames in os.walk(root):
-                dirnames[:] = [d for d in dirnames if not _skip_dir(d, include_ignored)]
-                for name in filenames:
-                    if Path(name).match(include):
-                        yield Path(dirpath) / name
-
-        for file in iter_files():
-            try:
-                if file.stat().st_size > MAX_GREP_FILE_BYTES:
-                    continue
-                data = file.read_bytes()
-            except OSError:
-                continue
-            if b"\x00" in data[:8192]:
-                continue
-            files_scanned += 1
-            for lineno, line in enumerate(data.decode("utf-8", "replace").splitlines(), 1):
-                if regex.search(line):
-                    if len(matches) >= limit:
-                        truncated = True
-                        break
-                    matches.append({"file": _rel(file, ctx), "line": lineno,
-                                    "text": line.strip()[:300]})
-            if truncated:
-                break
+        allow_outside = ctx.config.tools.allow_read_outside_workspace
+        matches, files_scanned, truncated = await asyncio.to_thread(
+            _grep_walk, root, regex, include, limit, include_ignored, ctx.workspace,
+            allow_outside,
+        )
         return ToolResult.success(
             {"matches": matches, "count": len(matches), "files_scanned": files_scanned},
             f"found {len(matches)} matches in {files_scanned} files", truncated=truncated,

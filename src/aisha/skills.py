@@ -28,7 +28,7 @@ class Skill:
 
 
 def parse_skill_file(path: Path, scope: str) -> Skill:
-    text = path.read_text(encoding="utf-8")
+    text = path.read_text(encoding="utf-8-sig")
     match = FRONTMATTER_RE.match(text)
     if not match:
         raise ToolValidationError(f"{path}: missing YAML frontmatter")
@@ -45,7 +45,7 @@ def parse_skill_file(path: Path, scope: str) -> Skill:
 
 
 def skill_body(path: Path) -> str:
-    text = path.read_text(encoding="utf-8")
+    text = path.read_text(encoding="utf-8-sig")
     match = FRONTMATTER_RE.match(text)
     return (match.group(2) if match else text).strip()
 

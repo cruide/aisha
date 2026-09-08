@@ -158,6 +158,46 @@ async def test_health_skip_returns_none():
     assert await client.health() is None
 
 
+async def test_interrupted_stream_returns_partial():
+    body = (
+        b'data: {"choices":[{"delta":{"content":"Hel"}}]}\n\n'
+        b'data: {"choices":[{"delta":{"content":"lo"}}]}\n\n'
+    )
+
+    def handler(request):
+        return httpx.Response(200, stream=ChunkedStream(body, 5))
+
+    resp = await make_client(handler).chat([], temperature=0, max_tokens=10)
+    assert resp.content == "Hello"
+    assert resp.interrupted is True
+
+
+async def test_interrupted_stream_preserves_pending_tool_call():
+    chunk = {"choices": [{"delta": {"tool_calls": [
+        {"index": 0, "id": "c1", "function": {"name": "read_file", "arguments": '{"pa'}}
+    ]}}]}
+    body = f"data: {json.dumps(chunk)}\n\n".encode()
+
+    def handler(request):
+        return httpx.Response(200, stream=ChunkedStream(body, 7))
+
+    resp = await make_client(handler).chat([], temperature=0, max_tokens=10)
+    assert resp.interrupted is True
+    assert resp.content == ""
+    assert len(resp.tool_calls) == 1 and resp.tool_calls[0].name == "read_file"
+
+
+async def test_complete_stream_not_interrupted():
+    body = sse({"choices": [{"delta": {"content": "ok"}}]})
+
+    def handler(request):
+        return httpx.Response(200, content=body)
+
+    resp = await make_client(handler).chat([], temperature=0, max_tokens=10)
+    assert resp.content == "ok"
+    assert resp.interrupted is False
+
+
 async def test_health_still_raises_on_connection_error():
     def handler(request):
         raise httpx.ConnectError("refused")
@@ -174,3 +214,76 @@ async def test_health_still_raises_on_503():
     client = make_client(handler)
     with pytest.raises(ServerUnavailableError):
         await client.health()
+
+
+async def test_health_503_sets_status():
+    def handler(request):
+        return httpx.Response(503)
+
+    client = make_client(handler)
+    with pytest.raises(ServerUnavailableError) as exc_info:
+        await client.health()
+    assert exc_info.value.status == 503
+
+
+class _FakeUi:
+    def __init__(self):
+        self.infos = []
+
+    def info(self, text):
+        self.infos.append(text)
+
+
+class _FakeModelClient:
+    def __init__(self, results):
+        self.results = list(results)
+        self.attempts = 0
+
+    async def resolve_model_meta(self):
+        self.attempts += 1
+        result = self.results.pop(0)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+
+async def test_startup_wait_retries_on_503(monkeypatch):
+    import aisha.cli as cli_mod
+
+    monkeypatch.setattr(cli_mod, "STARTUP_WAIT_INTERVAL", 0.0)
+    client = _FakeModelClient([
+        ServerUnavailableError("loading", status=503),
+        ServerUnavailableError("loading", status=503),
+        ("m", True, 4096),
+    ])
+    ui = _FakeUi()
+    result = await cli_mod.resolve_model_with_startup_wait(client, ui)
+    assert result == ("m", True, 4096)
+    assert client.attempts == 3
+    assert ui.infos
+
+
+async def test_startup_wait_does_not_retry_other_errors(monkeypatch):
+    import aisha.cli as cli_mod
+
+    monkeypatch.setattr(cli_mod, "STARTUP_WAIT_INTERVAL", 0.0)
+    client = _FakeModelClient([ServerUnavailableError("boom")])
+    ui = _FakeUi()
+    with pytest.raises(ServerUnavailableError):
+        await cli_mod.resolve_model_with_startup_wait(client, ui)
+    assert client.attempts == 1
+
+
+async def test_startup_wait_gives_up_after_timeout(monkeypatch):
+    import aisha.cli as cli_mod
+
+    monkeypatch.setattr(cli_mod, "STARTUP_WAIT_INTERVAL", 0.0)
+    monkeypatch.setattr(cli_mod, "STARTUP_WAIT_TIMEOUT", 0.0)
+    client = _FakeModelClient([
+        ServerUnavailableError("loading", status=503),
+        ("m", True, 4096),
+    ])
+    ui = _FakeUi()
+    with pytest.raises(ServerUnavailableError):
+        await cli_mod.resolve_model_with_startup_wait(client, ui)
+    assert client.attempts == 1

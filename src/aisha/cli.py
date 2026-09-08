@@ -7,15 +7,19 @@ import argparse
 import asyncio
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Any
+
+from rich.markup import escape
 
 from aisha import __version__
 from aisha.agent import AgentLoop
 from aisha.client import LlamaClient
 from aisha.config import Config, load_config
 from aisha.context import ConversationContext, build_tool_guide
-from aisha.errors import AishaError, ConfigurationError
+from aisha.errors import AishaError, ConfigurationError, ServerUnavailableError
+from aisha.logger import debug_logger
 from aisha.memory import MemoryStore
 from aisha.skills import SkillIndex
 from aisha.tools.base import ToolContext, ToolRegistry
@@ -82,6 +86,28 @@ def cli_overrides(args: argparse.Namespace) -> dict[str, dict[str, Any]]:
     return over
 
 
+STARTUP_WAIT_TIMEOUT = 120.0
+STARTUP_WAIT_INTERVAL = 4.0
+
+
+async def resolve_model_with_startup_wait(
+    client: LlamaClient, ui: ConsoleUI
+) -> tuple[str, bool, int | None]:
+    """Resolve the model, waiting a bounded time while the server reports 503 (loading)."""
+    start = time.monotonic()
+    while True:
+        try:
+            return await client.resolve_model_meta()
+        except ServerUnavailableError as exc:
+            if exc.status != 503:
+                raise
+            elapsed = time.monotonic() - start
+            if elapsed >= STARTUP_WAIT_TIMEOUT:
+                raise
+            ui.info(f"Model is still loading ({elapsed:.0f}s elapsed); waiting…")
+            await asyncio.sleep(STARTUP_WAIT_INTERVAL)
+
+
 def build_registry(config: Config) -> ToolRegistry:
     registry = ToolRegistry()
     for tool in (ReadFileTool(), WriteFileTool(), EditFileTool(), ListDirTool(), GlobTool(),
@@ -110,9 +136,10 @@ async def run_doctor(config: Config, client: LlamaClient, ui: ConsoleUI,
         if not ok and not warn:
             ok_all = False
         mark = "[green]✓[/]" if ok else ("[yellow]⚠[/]" if warn else "[red]✗[/]")
-        ui.console.print(f"  {mark} {label}" + (f" [dim]— {detail}[/]" if detail else ""))
+        suffix = f" [dim]— {escape(detail)}[/]" if detail else ""
+        ui.console.print(f"  {mark} {label}{suffix}")
 
-    ui.console.print(f"[bold]Diagnostics[/] {config.server.base_url}")
+    ui.console.print(f"[bold]Diagnostics[/] {escape(config.server.base_url)}")
     if config.server.skip_health:
         report(True, "/health", "skipped (--skip-health)", warn=True)
     else:
@@ -173,6 +200,10 @@ async def _amain(args: argparse.Namespace) -> int:
     workspace = Path.cwd().resolve()
     no_color = args.no_color or bool(os.environ.get("NO_COLOR"))
     ui = ConsoleUI(no_color=no_color, debug=args.debug)
+    if args.debug:
+        log_path = debug_logger.start(workspace)
+        ui.info(f"Debug log: {log_path}")
+
     try:
         config = load_config(workspace, cli=cli_overrides(args), read_only=args.read_only)
     except ConfigurationError as exc:
@@ -193,7 +224,7 @@ async def _amain(args: argparse.Namespace) -> int:
         if args.doctor:
             return 0 if await run_doctor(config, client, ui, args.tool_call_test) else 1
         try:
-            model, matched, n_ctx = await client.resolve_model_meta()
+            model, matched, n_ctx = await resolve_model_with_startup_wait(client, ui)
         except AishaError as exc:
             ui.error(str(exc), exc)
             ui.info("Hint: run 'aisha --doctor' for details; the server should be listening at "
@@ -202,7 +233,7 @@ async def _amain(args: argparse.Namespace) -> int:
 
         # if not matched:
         #     ui.warn(f"Model '{config.server.model}' not found on server, "
-        #             f"using '{model}'.")
+        #             f"using '{client.model}'.")
 
         if n_ctx:
             config.llm.context_window = n_ctx
@@ -230,6 +261,7 @@ async def _amain(args: argparse.Namespace) -> int:
         await ui.run_repl(agent, registry, lambda: run_doctor(config, client, ui))
         return 0
     finally:
+        debug_logger.close()
         await client.close()
 
 

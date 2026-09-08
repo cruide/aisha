@@ -9,7 +9,7 @@ import re
 import subprocess
 from typing import Any
 
-from aisha.errors import ToolPermissionError, ToolTimeoutError
+from aisha.errors import ToolPermissionError, ToolTimeoutError, ToolValidationError
 from aisha.tools.base import ConfirmRequest, Tool, ToolContext, ToolResult, require_confirmation
 from aisha.tools.files import resolve_path
 
@@ -37,6 +37,15 @@ DANGEROUS_PATTERNS: list[tuple[str, str]] = [
      r"new-service|net\s+stop)\b", "modifying system services"),
     (r"\b(password|passwd|token|secret|api[_-]?key)\s*[=:]\s*\S+", "possible secret in command"),
     (r"\b(sk|ghp|gho|glpat|xox[abp])[-_][A-Za-z0-9_-]{16,}", "looks like an access token"),
+    (r"\b(pip3?|npm|pnpm|yarn)\s+(install|add)\b", "package installation"),
+    (r"\bcomposer\s+require\b", "package installation (composer)"),
+    (r"\bgit\s+(checkout|restore)\s+\.(?!\S)", "discarding local changes (git checkout/restore .)"),
+    (r"\bgit\s+stash\s+(drop|clear)\b", "dropping stashed changes"),
+    (r"\b(invoke-expression|iex)\b", "executing an expression (Invoke-Expression)"),
+    (r"\bpowershell\b[^&|\n]*-enc(odedcommand)?\b", "encoded PowerShell command"),
+    (r"\bfrombase64string\b", "decoding base64 payload"),
+    (r"\bcmd(\.exe)?\s+/c\b", "nested cmd shell"),
+    (r"\b(powershell|pwsh)\b[^&|\n]*-(c|command)\b", "nested PowerShell shell"),
 ]
 _COMPILED = [(re.compile(p, re.IGNORECASE), reason) for p, reason in DANGEROUS_PATTERNS]
 
@@ -72,6 +81,33 @@ def truncate_output(text: str, max_chars: int) -> tuple[str, bool]:
     return f"{text[:head]}\n… [{skipped} chars skipped] …\n{text[-tail:]}", True
 
 
+MAX_SHELL_TIMEOUT = 600.0
+
+
+def normalize_timeout(raw: Any, default: float) -> float:
+    """Normalize a model-supplied timeout: non-positive is invalid, otherwise cap at 600 s."""
+    if raw is None:
+        return float(default)
+    try:
+        value = float(raw)
+    except (TypeError, ValueError) as exc:
+        raise ToolValidationError(f"Invalid timeout_seconds: {raw!r}") from exc
+    if value <= 0:
+        raise ToolValidationError("timeout_seconds must be greater than zero")
+    return min(value, MAX_SHELL_TIMEOUT)
+
+
+async def _bounded_read(stream: Any, limit: int) -> tuple[bytes, bool]:
+    """Read at most `limit` bytes from an async stream; returns (data, truncated)."""
+    buf = bytearray()
+    while len(buf) < limit:
+        chunk = await stream.read(min(65536, limit - len(buf)))
+        if not chunk:
+            return bytes(buf), False
+        buf.extend(chunk)
+    return bytes(buf), True
+
+
 async def kill_tree(proc: asyncio.subprocess.Process) -> None:
     """Terminate the process and all of its children."""
     if proc.returncode is not None:
@@ -95,7 +131,15 @@ async def kill_tree(proc: asyncio.subprocess.Process) -> None:
         pass
 
 
-async def run_process(argv: list[str], cwd: str, timeout: float) -> tuple[int, bytes, bytes]:
+async def run_process(
+    argv: list[str], cwd: str, timeout: float, stream_limit: int
+) -> tuple[int, bytes, bytes, bool]:
+    """Run a command, draining stdout/stderr concurrently with a hard byte limit.
+
+    Returns (returncode, stdout, stderr, truncated). Both pipes are drained in
+    parallel so a full stderr cannot block the child; when either stream exceeds
+    `stream_limit` the process tree is killed and accumulated bytes are returned.
+    """
     kwargs: dict[str, Any] = {}
     if os.name == "nt":
         kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
@@ -103,15 +147,32 @@ async def run_process(argv: list[str], cwd: str, timeout: float) -> tuple[int, b
         *argv, cwd=cwd, stdin=asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, **kwargs,
     )
+    out_buf = bytearray()
+    err_buf = bytearray()
+    truncated: list[bool] = []
+
+    async def drain() -> None:
+        out, err = await asyncio.gather(
+            _bounded_read(proc.stdout, stream_limit),
+            _bounded_read(proc.stderr, stream_limit),
+        )
+        out_buf.extend(out[0])
+        err_buf.extend(err[0])
+        truncated.append(out[1] or err[1])
+        if out[1] or err[1]:
+            await kill_tree(proc)
+        else:
+            await proc.wait()
+
     try:
-        out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        await asyncio.wait_for(drain(), timeout=timeout)
     except asyncio.TimeoutError:
         await kill_tree(proc)
         raise ToolTimeoutError(f"Command did not finish within {timeout:g} s and was stopped")
     except asyncio.CancelledError:
         await kill_tree(proc)
         raise
-    return proc.returncode or 0, out, err
+    return proc.returncode or 0, bytes(out_buf), bytes(err_buf), bool(truncated and truncated[0])
 
 
 class RunCommandTool(Tool):
@@ -145,7 +206,7 @@ class RunCommandTool(Tool):
         cwd, _ = resolve_path(args.get("cwd") or ".", ctx, write=False)
         if not cwd.is_dir():
             return ToolResult.failure("NotADirectoryError", f"Directory not found: {cwd}")
-        timeout = float(args.get("timeout_seconds") or cfg.shell_timeout)
+        timeout = normalize_timeout(args.get("timeout_seconds"), cfg.shell_timeout)
 
         danger = find_danger(command)
         if danger is not None:
@@ -162,14 +223,16 @@ class RunCommandTool(Tool):
                 key=key,
             ))
 
-        code, out, err = await run_process(build_argv(shell, command), str(cwd), timeout)
+        code, out, err, stream_truncated = await run_process(
+            build_argv(shell, command), str(cwd), timeout, 4 * cfg.max_output_chars
+        )
         stdout, t1 = truncate_output(out.decode("utf-8", "replace"), cfg.max_output_chars)
         stderr, t2 = truncate_output(err.decode("utf-8", "replace"), cfg.max_output_chars // 4)
         lines = stdout.count("\n") + (1 if stdout and not stdout.endswith("\n") else 0)
         summary = f"exit {code}, {lines} lines of output"
         result = ToolResult.success(
             {"exit_code": code, "stdout": stdout, "stderr": stderr, "shell": shell},
-            summary, truncated=t1 or t2,
+            summary, truncated=stream_truncated or t1 or t2,
         )
         if code != 0:
             result.summary = f"exit {code}" + (f": {stderr.strip().splitlines()[-1][:120]}"

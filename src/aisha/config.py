@@ -26,22 +26,23 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "request_timeout": 600.0,
     },
     "llm": {
-        "temperature": 0.7,
+        "temperature": 0.6,
         "top_p": None,
         "top_k": None,
         "repeat_penalty": None,
         "frequency_penalty": None,
         "max_output_tokens": 32768,
         "context_window": 32768,
-        "context_soft_limit": 0.85,
+        "context_soft_limit": 0.75,
         "max_tool_iterations": 25,
         "tool_guide": False,
         "communication_language": "Russian",
+        "enable_thinking": None,
     },
     "tools": {
         "shell": True,
         "web_search": True,
-        "permission": "auto",
+        "permission": "ask",
         "shell_type": "powershell",
         "shell_timeout": 120,
         "max_output_chars": 65536,
@@ -109,6 +110,7 @@ class LLMConfig:
     max_tool_iterations: int
     tool_guide: bool
     communication_language: str
+    enable_thinking: bool | None
 
 
 @dataclass(slots=True)
@@ -240,8 +242,8 @@ def _validate(data: dict[str, Any], source: str) -> None:
     url = urlparse(str(srv["base_url"]))
     if url.scheme not in ("http", "https") or not url.netloc:
         fail("server", "base_url", f"invalid URL {srv['base_url']!r}")
-        if not str(srv["model"]).strip():
-            fail("server", "model", "model name is required")
+    if not str(srv["model"]).strip():
+        fail("server", "model", "model name is required")
     if srv["api_key"] is not None and not isinstance(srv["api_key"], str):
         fail("server", "api_key", "expected a string")
     for key in ("connect_timeout", "request_timeout"):
@@ -286,6 +288,10 @@ def _validate(data: dict[str, Any], source: str) -> None:
     for section, key in bool_keys:
         if not isinstance(data[section][key], bool):
             fail(section, key, "expected true/false")
+    # enable_thinking is tri-state: true / false / null (server default)
+    et = data["llm"]["enable_thinking"]
+    if et is not None and not isinstance(et, bool):
+        fail("llm", "enable_thinking", "expected true, false, or null")
     lang = llm["communication_language"]
     if not isinstance(lang, str) or not lang.strip():
         fail("llm", "communication_language", "expected a non-empty string")

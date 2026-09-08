@@ -7,7 +7,7 @@ A local console AI agent in Python 3.11+. Works with an external
 OpenAI-compatible REST API. This is **not a web app**: the entire logic is a loop
 of "model request → tool calls → results → model again" in a single process.
 
-Version: `0.2.5`.
+Version: `0.2.8`.
 
 ## Features
 
@@ -121,6 +121,9 @@ context_soft_limit = 0.85
 max_tool_iterations = 25
 tool_guide = false           # true — add "Tool Guide" to system prompt (for weak models)
 communication_language = "Russian"  # agent's response language
+enable_thinking = null          # true/false — control Qwen-style thinking per request;
+                                # null = server default. When true: thinking is enabled for
+                                # final answers and disabled for tool-calling turns.
 
 [tools]
 shell = true
@@ -163,6 +166,7 @@ Environment variables:
 | `AISHA_SHELL` | `tools.shell_type` |
 | `AISHA_CONTEXT_WINDOW` | `llm.context_window` |
 | `AISHA_MAX_OUTPUT_TOKENS` | `llm.max_output_tokens` |
+| `AISHA_COMMUNICATION_LANGUAGE` | `llm.communication_language` |
 
 Config is strictly validated: unknown section or key raises an error.
 **Project-level `aisha.toml` is restricted by security rules** — it cannot set
@@ -203,10 +207,10 @@ unless the corresponding `allow_*_outside_workspace` is enabled.
 ## Custom System Prompt (SYSTEM.md)
 
 If a file `<workspace>/.aisha/SYSTEM.md` exists in the project root, its content
-**completely replaces** the built-in aisha system prompt (persona, environment, rules,
-memory and skill sections). The "Tool Guide" (`tool_guide = true`), `AGENTS.md`,
-and the current todo list are still appended after it. The file is truncated
-to 64 KB, same as `AGENTS.md`.
+**replaces** the built-in aisha system prompt (persona, environment, rules).
+A compact index of the available memory blocks and skills is still appended after it.
+The "Tool Guide" (`tool_guide = true`), `AGENTS.md`, and the current todo list are
+also appended. The file is truncated to 64 KB, same as `AGENTS.md`.
 
 ## REPL
 
@@ -227,7 +231,8 @@ Commands inside interactive mode:
 | `/quit`, `/exit`, `Ctrl+D` | exit |
 
 Additionally: `Ctrl+C` cancels the current request (REPL does not exit),
-`Ctrl+↑/↓` — request history, `Tab` — command and path autocompletion.
+`Ctrl+↑/↓` — request history, `Tab` — command and path autocompletion,
+`Alt+Enter` — insert a newline (multi-line input).
 
 ## Security
 

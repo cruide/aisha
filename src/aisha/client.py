@@ -60,13 +60,15 @@ class ChatResponse:
     tool_calls: list[ToolCall] = field(default_factory=list)
     finish_reason: str | None = None
     usage: dict[str, int] | None = None
+    interrupted: bool = False
 
     def to_message(self) -> dict[str, Any]:
         msg: dict[str, Any] = {"role": "assistant"}
         if self.content or not self.tool_calls:
             msg["content"] = self.content
-        if self.reasoning:
-            msg["reasoning_content"] = self.reasoning
+        # reasoning_content is generation scaffolding (chain-of-thought): it is
+        # intentionally NOT stored, so it is never replayed to the model on the
+        # next turn and does not bloat the context.
         if self.tool_calls:
             msg["tool_calls"] = [call.to_message() for call in self.tool_calls]
         return msg
@@ -120,7 +122,7 @@ class LlamaClient:
         except httpx.HTTPError as exc:
             raise ServerUnavailableError(f"Server {self.base_url} is unavailable: {exc}") from exc
         if resp.status_code == 503:
-            raise ServerUnavailableError("Server returned 503: model is still loading")
+            raise ServerUnavailableError("Server returned 503: model is still loading", status=503)
         if resp.status_code != 200:
             return None
         try:
@@ -182,6 +184,25 @@ class LlamaClient:
         n_ctx = n_ctx if isinstance(n_ctx, int) and n_ctx > 0 else None
         return model, matched, n_ctx
 
+    # --------------------------------------------------------------- tokenize
+    async def tokenize(self, text: str) -> list[int] | None:
+        """Tokenize *text* via the server's /tokenize endpoint.
+
+        Returns a list of token IDs, or ``None`` when the endpoint is
+        unavailable (e.g. non-llama server) or the request fails.
+        """
+        try:
+            resp = await self._http.post("/tokenize", json={"content": text})
+            if resp.status_code != 200:
+                return None
+            data = resp.json()
+            tokens = data.get("tokens")
+            if isinstance(tokens, list):
+                return [int(t) for t in tokens]
+        except (httpx.HTTPError, ValueError, KeyError):
+            pass
+        return None
+
     # ------------------------------------------------------------------- chat
     async def chat(
         self,
@@ -225,6 +246,7 @@ class LlamaClient:
         self, payload: dict[str, Any], on_event: EventCallback | None
     ) -> ChatResponse:
         started = False
+        done = False
         result = ChatResponse()
         pending: dict[int, ToolCall] = {}
         try:
@@ -239,27 +261,58 @@ class LlamaClient:
                     if not data:
                         continue
                     if data == "[DONE]":
+                        done = True
                         break
                     started = True
                     try:
                         chunk = json.loads(data)
                     except json.JSONDecodeError as exc:
+                        if self._has_partial(result, pending):
+                            break
                         raise ProtocolError(f"Malformed JSON in SSE: {data[:200]}") from exc
-                    self._apply_chunk(chunk, result, pending, on_event)
+                    try:
+                        self._apply_chunk(chunk, result, pending, on_event)
+                    except ProtocolError:
+                        if self._has_partial(result, pending):
+                            break
+                        raise
         except httpx.ReadTimeout as exc:
+            if started and self._has_partial(result, pending):
+                return self._finalize_partial(result, pending)
             if started:
                 raise ServerUnavailableError("Server response timed out") from exc
             raise _Retryable(str(exc)) from exc
         except (httpx.ConnectError, httpx.ConnectTimeout, httpx.RemoteProtocolError) as exc:
+            if started and self._has_partial(result, pending):
+                return self._finalize_partial(result, pending)
             if started:
                 raise ProtocolError(f"Connection interrupted during response: {exc}") from exc
             raise _Retryable(str(exc)) from exc
 
+        if started and not done and self._has_partial(result, pending):
+            return self._finalize_partial(result, pending)
+
+        self._append_pending(result, pending)
+        return result
+
+    @staticmethod
+    def _has_partial(result: ChatResponse, pending: dict[int, ToolCall]) -> bool:
+        return bool(result.content or result.reasoning or pending)
+
+    @staticmethod
+    def _append_pending(result: ChatResponse, pending: dict[int, ToolCall]) -> None:
         for idx in sorted(pending):
             call = pending[idx]
             if not call.id:
                 call.id = f"call_{idx}"
             result.tool_calls.append(call)
+
+    @classmethod
+    def _finalize_partial(
+        cls, result: ChatResponse, pending: dict[int, ToolCall]
+    ) -> ChatResponse:
+        cls._append_pending(result, pending)
+        result.interrupted = True
         return result
 
     @staticmethod

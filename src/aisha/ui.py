@@ -9,6 +9,7 @@ import os
 import shutil
 import signal
 import sys
+import time
 import traceback
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -109,6 +110,7 @@ class ConsoleUI:
         self._nav: int | None = None
         self._draft = ""
         self._stream_live: Live | None = None
+        self._stream_start: float | None = None
         self._tail: str = ""
         self._rtail: str = ""
         self._tool_live: Live | None = None
@@ -138,6 +140,10 @@ class ConsoleUI:
         @kb.add("c-down")
         def _next(event) -> None:
             self._navigate(event.current_buffer, +1)
+
+        @kb.add("escape", "c-m")
+        def _newline(event) -> None:
+            event.current_buffer.insert_text("\n")
 
         return kb
 
@@ -203,9 +209,11 @@ class ConsoleUI:
         body.append(f"{fmt_ctx(cfg.llm.context_window)}\n", style="green")
         body.append("Workspace: ", style="dim")
         body.append(f"{cfg.workspace}\n", style="#FF7F50")
-        body.append(f"{cfg.server.base_url} · {mode} · Shell: {cfg.tools.shell_type}\n", style="dim")
+        body.append(f"Host: {cfg.server.base_url} · {mode} · Shell: {cfg.tools.shell_type}\n",
+                    style="dim")
         body.append(
-            "/help — commands · Tab — paths · Ctrl+↑/↓ — previous inputs · Ctrl+C — interrupt",
+            "/help — commands · Tab — paths · Ctrl+↑/↓ — previous inputs · "
+            "Alt+Enter — newline · Ctrl+C — interrupt",
             style="#F5F5DC",
         )
 
@@ -258,7 +266,7 @@ class ConsoleUI:
         assert self.context
         idx = self.context.skills
         if not idx.skills and not idx.errors:
-            # self.info("No skills found (~/.aisha/skills, <workspace>/.aisha/skills).")
+            self.info("No skills found (~/.aisha/skills, <workspace>/.aisha/skills).")
             return
         table = Table.grid(padding=(0, 2))
         for s in idx.skills.values():
@@ -302,6 +310,7 @@ class ConsoleUI:
     def on_stream_start(self) -> None:
         self._tail = ""
         self._rtail = ""
+        self._stream_start = time.monotonic()
         if self.interactive and self.config and self.config.ui.stream:
             self._stream_live = Live(self._render_stream(), console=self.console,
                                      refresh_per_second=8, transient=True,
@@ -322,7 +331,9 @@ class ConsoleUI:
         return bool(self.config and (self.config.ui.show_reasoning or self.config.ui.debug))
 
     def _render_stream(self):
+        elapsed = 0 if self._stream_start is None else int(time.monotonic() - self._stream_start)
         label = "Aisha replying…" if self._tail else "Aisha thinking…"
+        label = f"{label} {elapsed}s"
         parts: list[Any] = [Spinner("dots", text=Text(label, style="yellow3"))]
         if not self._tail and self._rtail and self._show_reasoning():
             parts.append(Text(self._rtail, style="dim italic"))
@@ -497,14 +508,14 @@ class ConsoleUI:
             try:
                 text = await self.session.prompt_async([("class:prompt", "❯ ")])
             except KeyboardInterrupt:
-                self.info("Exit.")
-                return
+                self.info("^C")
+                continue
             except EOFError:
                 return
             text = text.strip()
             if not text:
                 continue
-            if text.startswith("/"):
+            if "\n" not in text and text.startswith("/"):
                 if not await self._command(text, agent, registry, doctor):
                     return
                 continue

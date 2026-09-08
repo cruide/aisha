@@ -21,7 +21,7 @@ def test_defaults_and_priority(tmp_path: Path, monkeypatch):
     assert cfg.tools.shell_timeout == 60  # project > global
     assert cfg.server.model == "x"  # env
     assert cfg.llm.temperature == 0.1  # cli > everything
-    assert cfg.tools.permission == "auto"
+    assert cfg.tools.permission == "ask"
 
 
 def test_project_cannot_enable_auto(tmp_path: Path, monkeypatch):
@@ -57,6 +57,37 @@ def test_strict_float_validation(tmp_path: Path, monkeypatch, key, value):
     (ws / "aisha.toml").write_text(f"[llm]\n{key} = {value}\n")
     with pytest.raises(ConfigurationError, match=key):
         load_config(ws, env={})
+
+
+@pytest.mark.parametrize("kwargs", [
+    {"cli": {"server": {"model": ""}}},
+    {"cli": {"server": {"model": "   "}}},
+    {"env": {"AISHA_MODEL": "   "}},
+])
+def test_empty_model_rejected(tmp_path: Path, monkeypatch, kwargs):
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    kwargs.setdefault("env", {})
+    with pytest.raises(ConfigurationError, match=r"\[server\] model"):
+        load_config(ws, **kwargs)
+
+
+def test_empty_model_rejected_from_toml(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    (ws / "aisha.toml").write_text('[server]\nmodel = ""\n')
+    with pytest.raises(ConfigurationError, match=r"\[server\] model"):
+        load_config(ws, env={})
+
+
+def test_invalid_url_still_reports_url_error(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    with pytest.raises(ConfigurationError, match="base_url"):
+        load_config(ws, env={"AISHA_SERVER_URL": "not-a-url"})
 
 
 def test_sources_are_unique(tmp_path: Path, monkeypatch):
