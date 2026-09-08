@@ -7,7 +7,7 @@ A local console AI agent in Python 3.11+. Works with an external
 OpenAI-compatible REST API. This is **not a web app**: the entire logic is a loop
 of "model request → tool calls → results → model again" in a single process.
 
-Version: `0.2.8`.
+Version: `0.2.9`.
 
 ## Features
 

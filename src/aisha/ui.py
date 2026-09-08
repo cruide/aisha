@@ -379,19 +379,18 @@ class ConsoleUI:
                        for line in self._pending.values()))
 
     def on_tool_end(self, call: ToolCall, result: ToolResult) -> None:
-        label = self._pending.pop(call.id, self._fmt_call(call.name, None))
+        self._pending.pop(call.id, None)
         if call.name != "skill" or result.ok or (result.error or {}).get("type") != "NotFound":
-            ms = result.meta.get("duration_ms")
-            suffix = f" · {ms} ms" if ms is not None else ""
             if result.ok:
-                line = Text.assemble(("  ✓ ", "green"), (call.name, "bold"),
-                                     (f" — {result.summary or 'ok'}", ""), (suffix, "dim"))
-                if result.meta.get("truncated"):
-                    line.append(" (truncated)", style="yellow")
+                summary = result.summary or "ok"
+                truncated_in_summary = "[truncated]" in summary
+                if result.meta.get("truncated") and not truncated_in_summary:
+                    summary += " [truncated]"
+                line = Text.assemble(("  ✓ ", "green"), (f"{call.name}: ", "bold"),
+                                     Text.from_markup(summary))
             else:
-                line = Text.assemble(("  ✗ ", "red"), (call.name, "bold"),
-                                     (f" — {result.summary}", "red"), (suffix, "dim"))
-            line.append(f"\n      {label}", style="dim")
+                line = Text.assemble(("  ✗ ", "red"), (f"{call.name}: ", "bold"),
+                                     Text.from_markup(result.summary or "error", style="red"))
             self.console.print(line)
         if call.name == "todowrite" and result.ok:
             self.print_todos()

@@ -114,6 +114,28 @@ def _read_window(
     return "".join(parts), returned, truncated, lines_total
 
 
+def _read_full(path: Path, max_chars: int) -> tuple[str, int, bool, int]:
+    """Read the entire file at once.
+
+    Returns (content, line_count, truncated, lines_total).
+    truncated is True when the file exceeds max_chars.
+    """
+    with path.open("rb") as fh:
+        if b"\x00" in fh.read(8192):
+            raise ToolValidationError("File appears to be binary")
+    data = path.read_text(encoding="utf-8", errors="replace")
+    lines_total = data.count("\n") + (1 if data and not data.endswith("\n") else 0)
+    if len(data) > max_chars:
+        truncated = True
+        content = data[:max_chars]
+        returned = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
+    else:
+        truncated = False
+        content = data
+        returned = lines_total
+    return content, returned, truncated, lines_total
+
+
 async def _confirm_outside_write(ctx: ToolContext, path: Path, action: str) -> None:
     await require_confirmation(ctx, ConfirmRequest(
         title="Write outside workspace",
@@ -258,6 +280,8 @@ class ReadFileTool(Tool):
         "required": ["path"],
     }
 
+    FULL_READ_THRESHOLD = 98304
+
     async def run(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         path, _ = resolve_path(args["path"], ctx, write=False)
         if not path.is_file():
@@ -265,24 +289,41 @@ class ReadFileTool(Tool):
         max_chars = ctx.config.tools.max_output_chars
         offset = max(0, int(args.get("offset", 0)))
         limit = max(1, int(args.get("limit", 300)))
+        full_read = (
+            ctx.config.llm.context_window >= self.FULL_READ_THRESHOLD
+            and offset == 0
+            and "limit" not in args
+        )
         try:
-            content, returned, truncated, lines_total = await asyncio.to_thread(
-                _read_window, path, offset, limit, max_chars
-            )
+            if full_read:
+                content, returned, truncated, lines_total = await asyncio.to_thread(
+                    _read_full, path, max_chars
+                )
+            else:
+                content, returned, truncated, lines_total = await asyncio.to_thread(
+                    _read_window, path, offset, limit, max_chars
+                )
         except ToolValidationError as exc:
             return ToolResult.failure("ToolValidationError", str(exc))
         size_bytes = path.stat().st_size
+        fname = path.name
         data: dict[str, Any] = {
             "path": _rel(path, ctx), "content": content, "offset": offset,
             "returned": returned, "size_bytes": size_bytes,
             "lines_total": lines_total, "total_known": lines_total is not None,
         }
-        if lines_total is not None:
-            summary = f"{lines_total} lines, {human_size(size_bytes)}"
+        if full_read and not truncated:
+            summary = f"[bright_cyan]{fname}[/], {human_size(size_bytes)}"
+        elif truncated:
+            summary = (
+                f"[bright_cyan]{fname}[/], {human_size(size_bytes)}"
+                f" (showing {returned} from {offset}) [truncated]"
+            )
         else:
-            summary = f"{human_size(size_bytes)}"
-        if truncated:
-            summary += f" (showing {returned} from {offset})"
+            summary = (
+                f"[bright_cyan]{fname}[/], {human_size(size_bytes)}"
+                f" (showing {returned} from {offset})"
+            )
         return ToolResult.success(data, summary, truncated=truncated)
 
 
@@ -324,9 +365,10 @@ class WriteFileTool(Tool):
         content: str = args["content"]
         atomic_write_text(path, content)
         action = "overwritten" if existed else "created"
+        fname = path.name
         data = {"path": _rel(path, ctx), "action": action, "bytes": len(content.encode("utf-8")),
                 "lines": content.count("\n") + (1 if content and not content.endswith("\n") else 0)}
-        return ToolResult.success(data, f"{action}, {data['lines']} lines")
+        return ToolResult.success(data, f"[bright_cyan]{fname}[/], {action}, {data['lines']} lines")
 
 
 class EditFileTool(Tool):
@@ -394,8 +436,9 @@ class EditFileTool(Tool):
         if crlf:
             new_text = new_text.replace("\n", "\r\n")
         atomic_write_text(path, new_text)
+        fname = path.name
         return ToolResult.success({"path": _rel(path, ctx), "replacements": count},
-                                  f"{count} replacement(s)")
+                                  f"[bright_cyan]{fname}[/], {count} replacement(s)")
 
 
 class ListDirTool(Tool):
@@ -436,9 +479,11 @@ class ListDirTool(Tool):
         truncated = len(entries) > limit
         entries = entries[:limit]
         dirs = sum(1 for e in entries if e["type"] == "dir")
+        rel = _rel(path, ctx)
         return ToolResult.success(
-            {"path": _rel(path, ctx), "entries": entries},
-            f"{dirs} dirs, {len(entries) - dirs} files", truncated=truncated,
+            {"path": rel, "entries": entries},
+            f"'[bright_cyan]{rel}[/]' {dirs} dirs, {len(entries) - dirs} files",
+            truncated=truncated,
         )
 
 
@@ -474,8 +519,11 @@ class GlobTool(Tool):
             allow_outside, limit,
         )
         found.sort()
-        return ToolResult.success({"files": found, "count": len(found)},
-                                  f"found {len(found)} files", truncated=truncated)
+        base_rel = _rel(base, ctx)
+        summary = f"[bright_cyan]{base_rel}[/] [[bright_cyan]\"{args['pattern']}\"[/]] — found {len(found)} files"
+        return ToolResult.success(
+            {"files": found, "count": len(found)}, summary, truncated=truncated,
+        )
 
 
 class GrepTool(Tool):
@@ -514,7 +562,12 @@ class GrepTool(Tool):
             _grep_walk, root, regex, include, limit, include_ignored, ctx.workspace,
             allow_outside,
         )
+        root_rel = _rel(root, ctx)
+        summary = (
+            f"[bright_cyan]{root_rel}[/] [[bright_cyan]\"{args['pattern']}\"[/]] — "
+            f"found {len(matches)} matches in {files_scanned} files"
+        )
         return ToolResult.success(
             {"matches": matches, "count": len(matches), "files_scanned": files_scanned},
-            f"found {len(matches)} matches in {files_scanned} files", truncated=truncated,
+            summary, truncated=truncated,
         )
