@@ -7,6 +7,7 @@ OpenAI-совместимому REST API. Это **не веб-приложен�
 
 Версия: `0.2.10`.
 
+```markdown
 [![Интерфейс агента Aisha](https://alex-tisch.ru/aisha.jpg)](https://alex-tisch.ru/aisha.jpg)
 
 ## Возможности
