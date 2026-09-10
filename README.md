@@ -9,8 +9,7 @@ of "model request → tool calls → results → model again" in a single proces
 
 Version: `0.2.10`.
 
-```markdown
-[![Aisha interface](https://alex-tisch.ru/aisha.jpg)](https://alex-tisch.ru/aisha.jpg)
+[![Aisha interface](aisha.jpg)](aisha.jpg)
 
 ## Features
 
