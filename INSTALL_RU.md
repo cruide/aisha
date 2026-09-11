@@ -135,9 +135,10 @@ request_timeout = 600
 temperature = 0.6
 max_output_tokens = 65536
 context_window = 65536     # ручная настройка: должно совпадать с -c llama-server; дефолт 32768
-context_soft_limit = 0.85
+context_soft_limit = 0.75
 max_tool_iterations = 25
 enable_thinking = null          # true/false — управление thinking для Qwen; null = серверное умолчание
+compact_tool_schemas = false    # true — вырезать блоки «Example:» из описаний инструментов
 
 [tools]
 shell = true
@@ -159,6 +160,22 @@ allow_private_hosts = false
 [memory]
 enabled = true
 max_block_chars = 30000
+index_max_chars = 20000
+
+[skills]
+index_max_chars = 20000
+
+[context]
+agents_md_max_chars = 65536
+
+[compaction]
+summary_max_tokens = 4096
+trim_user_messages = false
+elide_large_tool_args = false
+elide_threshold_chars = 4000
+trim_head_chars = 2000
+trim_tail_chars = 1000
+trim_block_fraction = 0.25
 
 [ui]
 theme = "dark"
@@ -171,15 +188,17 @@ debug = false
 
 ### Проектная конфигурация
 
-Файл `<workspace>/aisha.toml` переопределяет глобальные настройки для конкретного проекта. Он **не может ослабить безопасность**: `permission = "auto"`, чтение/запись за пределами workspace и т.п. приводят к ошибке конфигурации.
+Файл `<workspace>/.aisha/aisha.toml` переопределяет глобальные настройки для конкретного проекта. Он **не может ослабить безопасность**: `permission = "auto"`, чтение/запись за пределами workspace и т.п. приводят к ошибке конфигурации.
 
 ### Приоритет настроек
 
 1. Аргументы командной строки
-2. Переменные окружения (`AISHA_SERVER_URL`, `AISHA_MODEL`, `AISHA_PERMISSION`, `AISHA_SHELL`, `AISHA_CONTEXT_WINDOW`, `AISHA_MAX_OUTPUT_TOKENS`)
+2. Переменные окружения (`AISHA_SERVER_URL`, `AISHA_MODEL`, `AISHA_API_KEY`, `AISHA_SKIP_HEALTH`, `AISHA_PERMISSION`, `AISHA_SHELL`, `AISHA_CONTEXT_WINDOW`, `AISHA_MAX_OUTPUT_TOKENS`, `AISHA_COMMUNICATION_LANGUAGE`)
 3. Проектный `aisha.toml`
 4. Глобальный `~/.aisha/config.toml`
 5. Значения по умолчанию
+
+Полный список ключей и секций — см. пример конфига в `README_RU.md`.
 
 ## 6. Диагностика
 

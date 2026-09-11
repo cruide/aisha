@@ -51,10 +51,13 @@ def skill_body(path: Path) -> str:
 
 
 class SkillIndex:
-    def __init__(self, global_dir: Path, project_dir: Path) -> None:
+    def __init__(
+        self, global_dir: Path, project_dir: Path, *, index_max_chars: int = 20_000,
+    ) -> None:
         self.dirs = {"global": global_dir, "project": project_dir}
         self.skills: dict[str, Skill] = {}
         self.errors: list[str] = []
+        self.index_max_chars = index_max_chars
 
     def scan(self) -> None:
         self.skills.clear()
@@ -75,4 +78,20 @@ class SkillIndex:
         return self.skills.get(name)
 
     def index_text(self) -> str:
-        return "\n".join(f"- {s.name} — {s.description}" for s in self.skills.values())
+        if not self.skills:
+            return ""
+        lines = [f"- {s.name} — {s.description}" for s in self.skills.values()]
+        text = "\n".join(lines)
+        if len(text) <= self.index_max_chars:
+            return text
+        remaining = len(lines)
+        result: list[str] = []
+        total = 0
+        for line in lines:
+            if total + len(line) + 1 > self.index_max_chars:
+                break
+            result.append(line)
+            total += len(line) + 1
+            remaining -= 1
+        result.append(f"… +{remaining} more, use skill(name)")
+        return "\n".join(result)

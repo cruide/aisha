@@ -7,6 +7,12 @@ from aisha.config import load_config
 from aisha.errors import ConfigurationError
 
 
+def _write_project_config(ws: Path, text: str) -> None:
+    path = ws / ".aisha" / "aisha.toml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text)
+
+
 def test_defaults_and_priority(tmp_path: Path, monkeypatch):
     home = tmp_path / "home"
     (home / ".aisha").mkdir(parents=True)
@@ -15,7 +21,7 @@ def test_defaults_and_priority(tmp_path: Path, monkeypatch):
     )
     ws = tmp_path / "ws"
     ws.mkdir()
-    (ws / "aisha.toml").write_text("[tools]\nshell_timeout = 60\n")
+    _write_project_config(ws, "[tools]\nshell_timeout = 60\n")
     monkeypatch.setattr(Path, "home", staticmethod(lambda: home))
     cfg = load_config(ws, env={"AISHA_MODEL": "x"}, cli={"llm": {"temperature": 0.1}})
     assert cfg.tools.shell_timeout == 60  # project > global
@@ -28,7 +34,7 @@ def test_project_cannot_enable_auto(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
     ws = tmp_path / "ws"
     ws.mkdir()
-    (ws / "aisha.toml").write_text('[tools]\npermission = "auto"\n')
+    _write_project_config(ws, '[tools]\npermission = "auto"\n')
     with pytest.raises(ConfigurationError, match="permission"):
         load_config(ws, env={})
 
@@ -54,7 +60,7 @@ def test_strict_float_validation(tmp_path: Path, monkeypatch, key, value):
     monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
     ws = tmp_path / "ws"
     ws.mkdir()
-    (ws / "aisha.toml").write_text(f"[llm]\n{key} = {value}\n")
+    _write_project_config(ws, f"[llm]\n{key} = {value}\n")
     with pytest.raises(ConfigurationError, match=key):
         load_config(ws, env={})
 
@@ -77,7 +83,7 @@ def test_empty_model_rejected_from_toml(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
     ws = tmp_path / "ws"
     ws.mkdir()
-    (ws / "aisha.toml").write_text('[server]\nmodel = ""\n')
+    _write_project_config(ws, '[server]\nmodel = ""\n')
     with pytest.raises(ConfigurationError, match=r"\[server\] model"):
         load_config(ws, env={})
 
@@ -104,7 +110,7 @@ def test_tool_guide_flag(tmp_path: Path, monkeypatch):
     ws = tmp_path / "ws"
     ws.mkdir()
     assert load_config(ws, env={}).llm.tool_guide is False
-    (ws / "aisha.toml").write_text("[llm]\ntool_guide = true\n")
+    _write_project_config(ws, "[llm]\ntool_guide = true\n")
     assert load_config(ws, env={}).llm.tool_guide is True
 
 
@@ -112,7 +118,7 @@ def test_tool_guide_must_be_bool(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
     ws = tmp_path / "ws"
     ws.mkdir()
-    (ws / "aisha.toml").write_text('[llm]\ntool_guide = "yes"\n')
+    _write_project_config(ws, '[llm]\ntool_guide = "yes"\n')
     with pytest.raises(ConfigurationError, match="tool_guide"):
         load_config(ws, env={})
 
@@ -132,7 +138,7 @@ def test_sampling_params_set(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
     ws = tmp_path / "ws"
     ws.mkdir()
-    (ws / "aisha.toml").write_text(
+    _write_project_config(ws,
         "[llm]\ntop_p = 0.9\ntop_k = 40\nrepeat_penalty = 1.1\nfrequency_penalty = 0.5\n"
     )
     cfg = load_config(ws, env={})
@@ -148,7 +154,7 @@ def test_api_key_priority(tmp_path: Path, monkeypatch):
     ws.mkdir()
     assert load_config(ws, env={}).server.api_key == ""
     assert load_config(ws, env={"AISHA_API_KEY": "secret"}).server.api_key == "secret"
-    (ws / "aisha.toml").write_text('[server]\napi_key = "project-key"\n')
+    _write_project_config(ws, '[server]\napi_key = "project-key"\n')
     cfg = load_config(ws, env={"AISHA_API_KEY": "secret"})
     assert cfg.server.api_key == "secret"
 
@@ -165,7 +171,7 @@ def test_sampling_validation(tmp_path: Path, monkeypatch, key, value):
     monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
     ws = tmp_path / "ws"
     ws.mkdir()
-    (ws / "aisha.toml").write_text(f"[llm]\n{key} = {value}\n")
+    _write_project_config(ws, f"[llm]\n{key} = {value}\n")
     with pytest.raises(ConfigurationError, match=key):
         load_config(ws, env={})
 
@@ -180,7 +186,7 @@ def test_skip_health_from_project_toml(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
     ws = tmp_path / "ws"
     ws.mkdir()
-    (ws / "aisha.toml").write_text("[server]\nskip_health = true\n")
+    _write_project_config(ws, "[server]\nskip_health = true\n")
     cfg = load_config(ws, env={})
     assert cfg.server.skip_health is True
 
@@ -212,7 +218,7 @@ def test_skip_health_must_be_bool(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
     ws = tmp_path / "ws"
     ws.mkdir()
-    (ws / "aisha.toml").write_text('[server]\nskip_health = "yes"\n')
+    _write_project_config(ws, '[server]\nskip_health = "yes"\n')
     with pytest.raises(ConfigurationError, match="skip_health"):
         load_config(ws, env={})
 

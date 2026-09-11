@@ -38,6 +38,7 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "tool_guide": False,
         "communication_language": "Russian",
         "enable_thinking": None,
+        "compact_tool_schemas": False,
     },
     "tools": {
         "shell": True,
@@ -56,7 +57,18 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "max_content_chars": 50_000,
         "allow_private_hosts": False,
     },
-    "memory": {"enabled": True, "max_block_chars": 30_000},
+    "memory": {"enabled": True, "max_block_chars": 30_000, "index_max_chars": 20_000},
+    "skills": {"index_max_chars": 20_000},
+    "context": {"agents_md_max_chars": 65536},
+    "compaction": {
+        "summary_max_tokens": 4096,
+        "trim_user_messages": False,
+        "elide_large_tool_args": False,
+        "elide_threshold_chars": 4000,
+        "trim_head_chars": 2000,
+        "trim_tail_chars": 1000,
+        "trim_block_fraction": 0.25,
+    },
     "ui": {
         "theme": "dark",
         "stream": True,
@@ -111,6 +123,7 @@ class LLMConfig:
     tool_guide: bool
     communication_language: str
     enable_thinking: bool | None
+    compact_tool_schemas: bool
 
 
 @dataclass(slots=True)
@@ -138,6 +151,28 @@ class WebConfig:
 class MemoryConfig:
     enabled: bool
     max_block_chars: int
+    index_max_chars: int
+
+
+@dataclass(slots=True)
+class SkillsConfig:
+    index_max_chars: int
+
+
+@dataclass(slots=True)
+class ContextConfig:
+    agents_md_max_chars: int
+
+
+@dataclass(slots=True)
+class CompactionConfig:
+    summary_max_tokens: int
+    trim_user_messages: bool
+    elide_large_tool_args: bool
+    elide_threshold_chars: int
+    trim_head_chars: int
+    trim_tail_chars: int
+    trim_block_fraction: float
 
 
 @dataclass(slots=True)
@@ -156,6 +191,9 @@ class Config:
     tools: ToolsConfig
     web: WebConfig
     memory: MemoryConfig
+    skills: SkillsConfig
+    context: ContextConfig
+    compaction: CompactionConfig
     ui: UIConfig
     workspace: Path
     read_only: bool = False
@@ -277,13 +315,23 @@ def _validate(data: dict[str, Any], source: str) -> None:
     for key in ("timeout", "max_results", "max_page_bytes", "max_content_chars"):
         positive("web", key)
     positive("memory", "max_block_chars")
+    positive("memory", "index_max_chars")
+    positive("skills", "index_max_chars")
+    positive("context", "agents_md_max_chars")
+    positive("compaction", "summary_max_tokens")
+    positive("compaction", "elide_threshold_chars")
+    positive("compaction", "trim_head_chars")
+    positive("compaction", "trim_tail_chars")
+    number_in_range("compaction", "trim_block_fraction", 0.05, 0.95)
     bool_keys = (
         ("server", "skip_health"),
         ("tools", "shell"), ("tools", "web_search"),
         ("tools", "allow_read_outside_workspace"), ("tools", "allow_write_outside_workspace"),
         ("web", "allow_private_hosts"), ("memory", "enabled"),
         ("ui", "stream"), ("ui", "show_reasoning"), ("ui", "debug"),
-        ("llm", "tool_guide"),
+        ("llm", "tool_guide"), ("llm", "compact_tool_schemas"),
+        ("compaction", "trim_user_messages"),
+        ("compaction", "elide_large_tool_args"),
     )
     for section, key in bool_keys:
         if not isinstance(data[section][key], bool):
@@ -317,7 +365,7 @@ def load_config(
         _validate(data, str(gpath))
         sources.append(str(gpath))
 
-    ppath = workspace / "aisha.toml"
+    ppath = workspace / ".aisha" / "aisha.toml"
     if ppath.is_file():
         pdata = _load_toml(ppath)
         _check_structure(pdata, str(ppath))
@@ -350,6 +398,9 @@ def load_config(
         tools=ToolsConfig(**data["tools"]),
         web=WebConfig(**data["web"]),
         memory=MemoryConfig(**data["memory"]),
+        skills=SkillsConfig(**data["skills"]),
+        context=ContextConfig(**data["context"]),
+        compaction=CompactionConfig(**data["compaction"]),
         ui=UIConfig(**data["ui"]),
         workspace=workspace,
         read_only=read_only,

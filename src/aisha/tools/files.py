@@ -10,6 +10,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from rich.markup import escape
+
 from aisha.errors import ToolPermissionError, ToolValidationError
 from aisha.fsutil import atomic_write_text, human_size, is_inside
 from aisha.tools.base import ConfirmRequest, Tool, ToolContext, ToolResult, require_confirmation
@@ -58,13 +60,99 @@ def _read_full_text(path: Path, limit_bytes: int) -> str:
         return data.decode("utf-8", errors="replace")
 
 
-def _normalize_lines(text: str) -> str:
-    """Normalize to LF and strip trailing whitespace per line (for near-match detection)."""
-    return "\n".join(line.rstrip() for line in text.replace("\r\n", "\n").split("\n"))
+def _strip_blank_edges(text: str) -> str:
+    """Drop leading/trailing whitespace-only lines (tolerates stray blank lines)."""
+    lines = text.split("\n")
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    while lines and not lines[-1].strip():
+        lines.pop()
+    return "\n".join(lines)
 
 
-def _near_match_count(text: str, old: str) -> int:
-    return _normalize_lines(text).count(_normalize_lines(old))
+def _old_candidates(old: str) -> list[str]:
+    """old_text variants to try, most exact first (verbatim, then blank-edge trimmed)."""
+    candidates = [old]
+    stripped = _strip_blank_edges(old)
+    if stripped and stripped != old:
+        candidates.append(stripped)
+    return candidates
+
+
+def _ws_tolerant_pattern(old: str) -> re.Pattern[str]:
+    """Regex matching `old` while allowing trailing spaces/tabs on each line."""
+    parts = [re.escape(line.rstrip(" \t")) + r"[ \t]*" for line in old.split("\n")]
+    return re.compile("\n".join(parts))
+
+
+def _apply_candidate(
+    norm_text: str, candidate: str, norm_new: str, expected: int
+) -> tuple[str | None, int]:
+    """Try exact then whitespace-tolerant replacement of `candidate`.
+
+    Returns ``(new_text, count)`` when exactly `expected` occurrences were found,
+    otherwise ``(None, best_found)`` so the caller can report a useful count.
+    """
+    exact = norm_text.count(candidate)
+    if exact == expected:
+        return norm_text.replace(candidate, norm_new), expected
+    matches = list(_ws_tolerant_pattern(candidate).finditer(norm_text))
+    if len(matches) == expected:
+        result = norm_text
+        for match in reversed(matches):
+            result = result[:match.start()] + norm_new + result[match.end():]
+        return result, expected
+    return None, max(exact, len(matches))
+
+
+def _replace_fragment(
+    norm_text: str, norm_old: str, norm_new: str, expected: int
+) -> tuple[str | None, int]:
+    """Replace `norm_old` tolerating line endings, trailing spaces and blank edges."""
+    best_found = 0
+    for candidate in _old_candidates(norm_old):
+        result, found = _apply_candidate(norm_text, candidate, norm_new, expected)
+        if result is not None:
+            return result, found
+        best_found = max(best_found, found)
+    return None, best_found
+
+
+def _find_closest_region(norm_text: str, norm_old: str, context: int = 2) -> tuple[int, str] | None:
+    """Locate the region most similar to `norm_old` ignoring leading whitespace.
+
+    Returns ``(1-based line number, snippet)`` for the first file line whose
+    stripped text equals the first non-blank old_text line, or ``None``.
+    """
+    old_lines = norm_old.split("\n")
+    first = next((line.strip() for line in old_lines if line.strip()), "")
+    if not first:
+        return None
+    probe_len = max(1, len([line for line in old_lines if line.strip()]))
+    file_lines = norm_text.split("\n")
+    for idx, line in enumerate(file_lines):
+        if line.strip() != first:
+            continue
+        low = max(0, idx - context)
+        high = min(len(file_lines), idx + probe_len + context)
+        return idx + 1, "\n".join(file_lines[low:high])
+    return None
+
+
+def _not_found_message(norm_text: str, norm_old: str) -> str:
+    """Actionable 'old_text not found' error with a closest-match hint when possible."""
+    msg = "old_text not found in file; file unchanged"
+    region = _find_closest_region(norm_text, norm_old)
+    if region is None:
+        return msg + ". Re-read the file with read_file and copy the exact fragment."
+    line_no, snippet = region
+    if len(snippet) > 1500:
+        snippet = snippet[:1500] + "…"
+    return (
+        f"{msg}. Closest match is near line {line_no} (check indentation and exact "
+        f"characters):\n```\n{snippet}\n```\n"
+        "Re-read the file and copy the exact fragment as old_text."
+    )
 
 
 def _read_window(
@@ -311,15 +399,10 @@ class ReadFileTool(Tool):
             "lines_total": lines_total, "total_known": lines_total is not None,
         }
         if full_read and not truncated:
-            summary = f"[bright_cyan]{fname}[/], {human_size(size_bytes)}"
-        elif truncated:
-            summary = (
-                f"[bright_cyan]{fname}[/], {human_size(size_bytes)}"
-                f" (showing {returned} from {offset}) [truncated]"
-            )
+            summary = f"[bright_cyan]{escape(fname)}[/], {human_size(size_bytes)}"
         else:
             summary = (
-                f"[bright_cyan]{fname}[/], {human_size(size_bytes)}"
+                f"[bright_cyan]{escape(fname)}[/], {human_size(size_bytes)}"
                 f" (showing {returned} from {offset})"
             )
         return ToolResult.success(data, summary, truncated=truncated)
@@ -361,25 +444,35 @@ class WriteFileTool(Tool):
         fname = path.name
         data = {"path": _rel(path, ctx), "action": action, "bytes": len(content.encode("utf-8")),
                 "lines": content.count("\n") + (1 if content and not content.endswith("\n") else 0)}
-        return ToolResult.success(data, f"[bright_cyan]{fname}[/], {action}, {data['lines']} lines")
+        return ToolResult.success(
+            data, f"[bright_cyan]{escape(fname)}[/], {action}, {data['lines']} lines"
+        )
 
 
 class EditFileTool(Tool):
     name = "edit_file"
     description = (
-        "Replace exact old_text in a previously read file. expected_replacements defaults to 1. "
-        "Example: edit_file(path=\"src/app.py\", old_text=\"return 1\", new_text=\"return 2\")."
+        "Edit an existing text file by replacing one exact fragment. "
+        "First read_file the file and copy old_text verbatim, including indentation; "
+        "never add line-number prefixes, code fences or manual escaping. "
+        "old_text must match exactly once (default expected_replacements=1), so include "
+        "a few surrounding lines when the fragment is ambiguous. "
+        "If it reports 'not found', read_file again and copy the current text. "
+        "Example: edit_file(path=\"src/app.py\", old_text=\"    return 1\", "
+        "new_text=\"    return 2\")."
     )
     parameters = {
         "type": "object",
         "properties": {
             "path": {"type": "string", "description": "File path (relative to workspace)"},
             "old_text": {"type": "string",
-                         "description": "Exact fragment to replace (verbatim copy from file)"},
+                         "description": "Verbatim fragment copied from read_file "
+                                        "(exact whitespace/indentation, no line numbers)"},
             "new_text": {"type": "string",
-                         "description": "New text to replace old_text with"},
+                         "description": "Replacement text; keep the original indentation"},
             "expected_replacements": {"type": "integer",
-                                      "description": "How many times old_text should occur"},
+                                      "description": "Exact number of occurrences to "
+                                                     "replace (default 1)"},
         },
         "required": ["path", "old_text", "new_text"],
     }
@@ -391,7 +484,7 @@ class EditFileTool(Tool):
         if not path.is_file():
             return ToolResult.failure("FileNotFoundError", f"File not found: {args['path']}")
         old, new = args["old_text"], args["new_text"]
-        if not old:
+        if not old.strip():
             return ToolResult.failure("ToolValidationError", "old_text cannot be empty")
         expected = int(args.get("expected_replacements", 1))
         max_chars = ctx.config.tools.max_output_chars
@@ -405,28 +498,24 @@ class EditFileTool(Tool):
         norm_old = old.replace("\r\n", "\n")
         norm_new = new.replace("\r\n", "\n")
 
-        count = norm_text.count(norm_old)
-        if count == 0:
-            near = _near_match_count(text, old)
-            msg = "old_text not found in file; file unchanged"
-            if near == 1:
-                msg += " (a near-match differs by line endings or trailing spaces)"
-            elif near > 1:
-                msg += f" ({near} near-matches differ by line endings or trailing spaces)"
-            return ToolResult.failure("ToolValidationError", msg)
-        if count != expected:
+        result, count = _replace_fragment(norm_text, norm_old, norm_new, expected)
+        if result is None:
+            if count == 0:
+                return ToolResult.failure(
+                    "ToolValidationError", _not_found_message(norm_text, norm_old)
+                )
             return ToolResult.failure(
                 "ToolValidationError",
                 f"Found {count} matches, expected {expected}; file unchanged. "
-                "Refine old_text or set expected_replacements.",
+                "Include more surrounding lines to make old_text unique, or set "
+                "expected_replacements.",
             )
-        new_text = norm_text.replace(norm_old, norm_new)
         if crlf:
-            new_text = new_text.replace("\n", "\r\n")
-        atomic_write_text(path, new_text)
+            result = result.replace("\n", "\r\n")
+        atomic_write_text(path, result)
         fname = path.name
         return ToolResult.success({"path": _rel(path, ctx), "replacements": count},
-                                  f"[bright_cyan]{fname}[/], {count} replacement(s)")
+                                  f"[bright_cyan]{escape(fname)}[/], {count} replacement(s)")
 
 
 class ListDirTool(Tool):
@@ -468,7 +557,7 @@ class ListDirTool(Tool):
         rel = _rel(path, ctx)
         return ToolResult.success(
             {"path": rel, "entries": entries},
-            f"'[bright_cyan]{rel}[/]' {dirs} dirs, {len(entries) - dirs} files",
+            f"'[bright_cyan]{escape(rel)}[/]' {dirs} dirs, {len(entries) - dirs} files",
             truncated=truncated,
         )
 
@@ -477,7 +566,8 @@ class GlobTool(Tool):
     name = "glob"
     read_only = True
     description = (
-        "Find file paths by glob pattern. path defaults to \".\". Example: glob(pattern=\"src/**/*.py\")."
+        "Find file paths by glob pattern. path defaults to \".\". "
+        "Example: glob(pattern=\"src/**/*.py\")."
     )
     parameters = {
         "type": "object",
@@ -504,7 +594,11 @@ class GlobTool(Tool):
         )
         found.sort()
         base_rel = _rel(base, ctx)
-        summary = f"[bright_cyan]{base_rel}[/] [[bright_cyan]\"{args['pattern']}\"[/]] — found {len(found)} files"
+        pat = args['pattern']
+        summary = (
+            f"[bright_cyan]{escape(base_rel)}[/] "
+            f"[[bright_cyan]\"{escape(pat)}\"[/]] — found {len(found)} files"
+        )
         return ToolResult.success(
             {"files": found, "count": len(found)}, summary, truncated=truncated,
         )
@@ -514,7 +608,8 @@ class GrepTool(Tool):
     name = "grep"
     read_only = True
     description = (
-        "Search file contents using a Python regular expression. path defaults to \".\"; limit defaults to 100. "
+        "Search file contents using a Python regular expression. "
+        "path defaults to \".\"; limit defaults to 100. "
         "Example: grep(pattern=\"def foo\", include=\"*.py\", path=\"src\")."
     )
     parameters = {
@@ -546,7 +641,7 @@ class GrepTool(Tool):
         )
         root_rel = _rel(root, ctx)
         summary = (
-            f"[bright_cyan]{root_rel}[/] [[bright_cyan]\"{args['pattern']}\"[/]] — "
+            f"[bright_cyan]{escape(root_rel)}[/] [[bright_cyan]\"{escape(args['pattern'])}\"[/]] — "
             f"found {len(matches)} matches in {files_scanned} files"
         )
         return ToolResult.success(

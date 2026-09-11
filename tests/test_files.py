@@ -82,23 +82,50 @@ async def test_edit_file_crlf_preserved(ctx):
     assert (ctx.workspace / "crlf.txt").read_bytes() == b"foo\r\nbar\r\n"
 
 
-async def test_edit_file_near_match_hint_no_change(ctx):
+async def test_edit_file_trailing_whitespace_tolerated(ctx):
     (ctx.workspace / "f.txt").write_text("hello world  \nfoo\n", encoding="utf-8")
     r = await EditFileTool().run(
         {"path": "f.txt", "old_text": "hello world\nfoo", "new_text": "x"}, ctx
     )
+    assert r.ok and r.data["replacements"] == 1
+    assert (ctx.workspace / "f.txt").read_text() == "x\n"
+
+
+async def test_edit_file_blank_edges_tolerated(ctx):
+    (ctx.workspace / "f.txt").write_text("a\nbbb\nc\n", encoding="utf-8")
+    r = await EditFileTool().run(
+        {"path": "f.txt", "old_text": "\n\nbbb\n", "new_text": "BBB"}, ctx
+    )
+    assert r.ok and r.data["replacements"] == 1
+    assert (ctx.workspace / "f.txt").read_text() == "a\nBBB\nc\n"
+
+
+async def test_edit_file_indentation_hint_no_change(ctx):
+    (ctx.workspace / "f.txt").write_text("def f():\n    return 1\n", encoding="utf-8")
+    r = await EditFileTool().run(
+        {"path": "f.txt", "old_text": "def f():\n  return 1\n", "new_text": "x"}, ctx
+    )
     assert not r.ok
-    assert "near-match" in r.error["message"]
-    assert (ctx.workspace / "f.txt").read_text() == "hello world  \nfoo\n"
+    assert "Closest match" in r.error["message"]
+    assert (ctx.workspace / "f.txt").read_text() == "def f():\n    return 1\n"
 
 
-async def test_edit_file_multiple_near_matches_not_unique(ctx):
+async def test_edit_file_not_found_no_region(ctx):
+    (ctx.workspace / "f.txt").write_text("alpha\nbeta\n", encoding="utf-8")
+    r = await EditFileTool().run(
+        {"path": "f.txt", "old_text": "totally absent", "new_text": "x"}, ctx
+    )
+    assert not r.ok
+    assert "Re-read the file" in r.error["message"]
+
+
+async def test_edit_file_multiple_matches_not_unique(ctx):
     (ctx.workspace / "f.txt").write_text("abc  \ndef  \nabc  \ndef  \n", encoding="utf-8")
     r = await EditFileTool().run(
         {"path": "f.txt", "old_text": "abc\ndef", "new_text": "x"}, ctx
     )
     assert not r.ok
-    assert "near-matches" in r.error["message"]
+    assert "2 matches" in r.error["message"]
 
 
 async def test_edit_file_too_large(ctx):
@@ -130,6 +157,13 @@ def test_glob_match_patterns():
     assert _glob_match("a.py", "a.py")
     assert not _glob_match("a.py", "b.py")
     assert not _glob_match("a.py", "src/**/*.py")
+
+
+async def test_read_file_summary_escapes_bracketed_filename(ctx):
+    (ctx.workspace / "f[error].txt").write_text("hello\n", encoding="utf-8")
+    r = await ReadFileTool().run({"path": "f[error].txt"}, ctx)
+    assert r.ok
+    assert "f\\[error].txt" in r.summary
 
 
 async def test_glob_prunes_excluded_dirs(ctx):

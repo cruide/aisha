@@ -65,8 +65,10 @@ def fmt_int(n: int) -> str:
 
 
 def fmt_ctx(n: int) -> str:
-    if n % (1024 * 1024) == 0:
-        return f"{n // (1024 * 1024)}M"
+    if n >= 1_000_000:
+        value = round(n / 1_000_000, 1)
+        text = f"{value:.1f}".rstrip("0").rstrip(".")
+        return f"{text}M"
     if n % 1024 == 0:
         return f"{n // 1024}K"
     return fmt_int(n)
@@ -261,6 +263,26 @@ class ConsoleUI:
         ]
         for k, v in rows:
             table.add_row(f"[bold]{k}[/]", escape(v))
+        # Context breakdown.
+        sys_chars = ctx._system_chars
+        agents_chars = len(ctx.agents_md)
+        mem_idx = ctx.memory.index_text() if ctx.memory else ""
+        mem_chars = len(mem_idx)
+        skills_chars = len(ctx.skills.index_text())
+        todos_json = json.dumps(ctx.todos, ensure_ascii=False) if ctx.todos else ""
+        todos_chars = len(todos_json)
+        tools_chars = ctx.tools_chars
+        hist_chars = ctx._messages_chars
+        est_tokens = ctx.estimate_sent_tokens()
+        table.add_row("", "")
+        table.add_row("[bold]System[/]", f"{fmt_int(sys_chars)} chars")
+        table.add_row("— AGENTS.md", fmt_int(agents_chars))
+        table.add_row("— memory index", fmt_int(mem_chars))
+        table.add_row("— skills index", fmt_int(skills_chars))
+        table.add_row("— todos", fmt_int(todos_chars))
+        table.add_row("[bold]Tools schemas[/]", f"{fmt_int(tools_chars)} chars")
+        table.add_row("[bold]History[/]", f"{fmt_int(hist_chars)} chars")
+        table.add_row("[bold]~tokens[/]", f"{fmt_int(est_tokens)}")
         self.console.print(Panel(table, title="Status", title_align="left", border_style="cyan"))
 
     def print_skills(self) -> None:
@@ -384,14 +406,15 @@ class ConsoleUI:
         if call.name != "skill" or result.ok or (result.error or {}).get("type") != "NotFound":
             if result.ok:
                 summary = result.summary or "ok"
-                truncated_in_summary = "[truncated]" in summary
-                if result.meta.get("truncated") and not truncated_in_summary:
-                    summary += " [truncated]"
+                if result.meta.get("truncated"):
+                    summary += " " + escape("[truncated]")
                 line = Text.assemble(("  ✓ ", "green"), (f"{call.name}: ", "bold"),
                                      Text.from_markup(summary))
             else:
+                # Failure messages are plain text and may contain arbitrary brackets
+                # (code snippets, stderr, paths); render them literally, not as markup.
                 line = Text.assemble(("  ✗ ", "red"), (f"{call.name}: ", "bold"),
-                                     Text.from_markup(result.summary or "error", style="red"))
+                                     Text(result.summary or "error", style="red"))
             self.console.print(line)
         if call.name == "todowrite" and result.ok:
             self.print_todos()

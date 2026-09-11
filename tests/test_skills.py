@@ -25,3 +25,19 @@ def test_scan_bom_skill(tmp_path):
     assert idx.get("rev").scope == "project"
     assert skill_body(idx.get("rev").path) == "P body"
     assert len(idx.errors) == 1
+
+
+def test_index_text_truncates(tmp_path):
+    root = tmp_path / "skills"
+    for i in range(10):
+        d = root / f"s{i}"
+        d.mkdir(parents=True)
+        (d / "SKILL.md").write_text(
+            f"---\nname: s{i}\ndescription: desc{i}\n---\nbody\n", encoding="utf-8"
+        )
+    idx = SkillIndex(root, tmp_path / "proj", index_max_chars=40)
+    idx.scan()
+    text = idx.index_text()
+    assert "use skill(name)" in text
+    assert "s0" in text
+    assert "s9" not in text

@@ -137,9 +137,10 @@ request_timeout = 600
 temperature = 0.6
 max_output_tokens = 65536
 context_window = 65536     # manual override: match llama-server -c; default is 32768
-context_soft_limit = 0.85
+context_soft_limit = 0.75
 max_tool_iterations = 25
 enable_thinking = null          # true/false — control Qwen-style thinking; null = server default
+compact_tool_schemas = false    # true — strip "Example:" blocks from tool descriptions
 
 [tools]
 shell = true
@@ -161,6 +162,22 @@ allow_private_hosts = false
 [memory]
 enabled = true
 max_block_chars = 30000
+index_max_chars = 20000
+
+[skills]
+index_max_chars = 20000
+
+[context]
+agents_md_max_chars = 65536
+
+[compaction]
+summary_max_tokens = 4096
+trim_user_messages = false
+elide_large_tool_args = false
+elide_threshold_chars = 4000
+trim_head_chars = 2000
+trim_tail_chars = 1000
+trim_block_fraction = 0.25
 
 [ui]
 theme = "dark"
@@ -173,15 +190,17 @@ debug = false
 
 ### Project configuration
 
-File `<workspace>/aisha.toml` overrides global settings for a specific project. It **cannot weaken security**: `permission = "auto"`, read/write outside the workspace, etc. will cause a configuration error.
+File `<workspace>/.aisha/aisha.toml` overrides global settings for a specific project. It **cannot weaken security**: `permission = "auto"`, read/write outside the workspace, etc. will cause a configuration error.
 
 ### Settings priority
 
 1. Command-line arguments
-2. Environment variables (`AISHA_SERVER_URL`, `AISHA_MODEL`, `AISHA_PERMISSION`, `AISHA_SHELL`, `AISHA_CONTEXT_WINDOW`, `AISHA_MAX_OUTPUT_TOKENS`)
+2. Environment variables (`AISHA_SERVER_URL`, `AISHA_MODEL`, `AISHA_API_KEY`, `AISHA_SKIP_HEALTH`, `AISHA_PERMISSION`, `AISHA_SHELL`, `AISHA_CONTEXT_WINDOW`, `AISHA_MAX_OUTPUT_TOKENS`, `AISHA_COMMUNICATION_LANGUAGE`)
 3. Project `aisha.toml`
 4. Global `~/.aisha/config.toml`
 5. Default values
+
+Full list of keys and sections — see the config example in `README.md`.
 
 ## 6. Diagnostics
 

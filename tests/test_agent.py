@@ -349,7 +349,7 @@ def test_tool_guide_injected_when_enabled(config, skills, workspace):
     guide = build_tool_guide(registry.schemas())
     context = ConversationContext(config, None, skills, tool_guide=guide)
     prompt = context.system_prompt()
-    assert "Tool reference" in prompt
+    assert "Available tools" in prompt
     assert "read_file" in prompt and "edit_file" in prompt
     assert "old_text" in prompt
 
@@ -661,3 +661,247 @@ async def test_enable_thinking_none_omits_chat_template_kwargs(config, skills, w
     await agent.run("hi")
     s = captured_sampling["calls"][0]
     assert s is None or "chat_template_kwargs" not in s
+
+
+# ------------------------------------------------------- strip_examples tests
+def test_strip_examples_removes_inline_example():
+    from aisha.agent import strip_examples
+
+    schemas = [
+        {"type": "function", "function": {"name": "read_file",
+                                          "description": "Read a file. Example: read_file()."}},
+        {"type": "function", "function": {"name": "todowrite",
+                                          "description": "Replace tasks. Example: todowrite()."}},
+        {"type": "function", "function": {"name": "plain", "description": "No example here."}},
+    ]
+    result = strip_examples(schemas)
+    assert "Example:" not in result[0]["function"]["description"]
+    assert result[0]["function"]["description"] == "Read a file."
+    assert result[1]["function"]["description"] == "Replace tasks."
+    assert result[2]["function"]["description"] == "No example here."
+
+
+# ------------------------------------------------- to_model_json / duration_ms
+def test_to_model_json_omits_duration_ms():
+    result = ToolResult.success({"x": 1}, "ok", duration_ms=42, truncated=True)
+    model = json.loads(result.to_model_json())
+    assert "duration_ms" not in model["meta"]
+    assert model["meta"]["truncated"] is True
+    full = json.loads(result.to_json())
+    assert full["meta"]["duration_ms"] == 42
+
+
+# ------------------------------------------------------- interactive schemas
+def test_schemas_exclude_interactive_only_when_not_interactive():
+    from aisha.tools.extras import AskUserTool
+
+    registry = ToolRegistry()
+    registry.register(ReadFileTool())
+    registry.register(AskUserTool())
+    names = [s["function"]["name"] for s in registry.schemas(interactive=True)]
+    assert "ask_user" in names
+    names = [s["function"]["name"] for s in registry.schemas(interactive=False)]
+    assert "ask_user" not in names
+    assert "read_file" in names
+
+
+# ------------------------------------------------- estimate_sent_tokens + tools
+def test_estimate_sent_tokens_includes_tools(config, skills, workspace):
+    context = ConversationContext(config, None, skills)
+    context.set_tools_chars(6900)
+    with_tools = context.estimate_sent_tokens()
+    context.set_tools_chars(0)
+    without_tools = context.estimate_sent_tokens()
+    assert with_tools > without_tools
+
+
+# ---------------------------------------------------------- AGENTS.md truncation
+def test_agents_md_truncation_marker(config, skills, workspace):
+    config.context.agents_md_max_chars = 1000
+    (workspace / "AGENTS.md").write_text("A" * 2000, encoding="utf-8")
+    context = ConversationContext(config, None, skills)
+    prompt = context.system_prompt()
+    assert "chars omitted" in prompt
+    assert "offset=" in prompt
+    assert 'read_file("AGENTS.md"' in prompt
+
+
+def test_agents_md_limit_adapts_to_window(config, skills, workspace):
+    # Default limit (64 KB) must not swallow a 16K context window.
+    (workspace / "AGENTS.md").write_text("A" * 60_000, encoding="utf-8")
+    config.llm.context_window = 16_384
+    context = ConversationContext(config, None, skills)
+    assert context.agents_md_truncated is True
+    assert len(context.agents_md) < 60_000
+    assert "chars omitted" in context.system_prompt()
+
+
+def test_explicit_small_agents_md_limit_is_respected(config, skills, workspace):
+    config.context.agents_md_max_chars = 1000
+    config.llm.context_window = 32_768
+    (workspace / "AGENTS.md").write_text("A" * 5000, encoding="utf-8")
+    context = ConversationContext(config, None, skills)
+    assert context._md_limit_chars == 1000
+
+
+# ------------------------------------------------- history segmentation / split
+def _make_history(context, *, turns: int, tool_chars: int = 2000) -> None:
+    context.add_user("long task")
+    for i in range(turns):
+        context.add_assistant(ChatResponse(tool_calls=[
+            ToolCall(id=f"c{i}", name="echo",
+                     arguments=json.dumps({"text": "a" * tool_chars})),
+        ]))
+        context.add_tool_result(
+            f"c{i}", "echo", json.dumps({"ok": True, "data": {"text": "b" * tool_chars}})
+        )
+
+
+def _assert_valid_tool_pairs(messages):
+    pending: set[str] = set()
+    for msg in messages:
+        role = msg.get("role")
+        if role in ("user", "assistant") and pending:
+            raise AssertionError(f"unanswered tool calls: {pending}")
+        if role == "assistant":
+            for call in msg.get("tool_calls") or []:
+                pending.add(call["id"])
+        elif role == "tool":
+            pending.discard(msg.get("tool_call_id"))
+    if pending:
+        raise AssertionError(f"unanswered tool calls at end: {pending}")
+
+
+def test_segments_group_tool_results(config, skills, workspace):
+    context = ConversationContext(config, None, skills)
+    context.add_user("u")
+    context.add_assistant(ChatResponse(tool_calls=[ToolCall(id="c1", name="echo")]))
+    context.add_tool_result("c1", "echo", "{}")
+    context.add_assistant(ChatResponse(content="done"))
+    segments = context.segments(context.messages)
+    assert [len(seg) for seg in segments] == [1, 2, 1]
+
+
+def test_split_for_compaction_keeps_last_segment(config, skills, workspace):
+    context = ConversationContext(config, None, skills)
+    _make_history(context, turns=20)
+    old, keep = context.split_for_compaction(keep_budget_chars=3000)
+    assert old, "at least one segment must be summarised"
+    assert keep and keep[-1]["role"] == "tool"
+    _assert_valid_tool_pairs(old)
+    _assert_valid_tool_pairs(keep)
+
+
+async def test_compact_reduces_single_turn_history(config, skills, workspace):
+    config.llm.context_window = 8192
+    config.llm.max_output_tokens = 8192
+    client = FakeClient([ChatResponse(content="the summary")])
+    events = FakeEvents()
+    agent = make_agent(config, skills, workspace, client, events)
+    context = agent.context
+    _make_history(context, turns=40, tool_chars=3000)
+    assert context.needs_compaction() is True
+    before = len(context.messages)
+
+    assert await agent.compact() is True
+    assert len(context.messages) < before
+    assert context.needs_compaction() is False
+    _assert_valid_tool_pairs(context.messages)
+    assert any("summary" in str(m.get("content", "")) for m in context.messages)
+
+
+def test_split_keeps_last_user_turn_intact(config, skills, workspace):
+    context = ConversationContext(config, None, skills)
+    context.add_user("first")
+    context.add_assistant(ChatResponse(content="a1"))
+    context.add_user("second")
+    old, keep = context.split_for_compaction(keep_budget_chars=10_000_000)
+    assert old and old[-1]["role"] == "assistant"
+    assert keep[0]["role"] == "user" and keep[0]["content"] == "second"
+
+
+def test_bounded_history_preserves_tool_pairs(config, skills, workspace):
+    agent = make_agent(config, skills, workspace, FakeClient([]))
+    context = agent.context
+    _make_history(context, turns=30, tool_chars=3000)
+    bounded = agent._bounded_history(context.messages, budget_chars=8000)
+    _assert_valid_tool_pairs(bounded)
+    assert any("omitted" in str(m.get("content", "")) for m in bounded)
+
+
+def test_trim_keep_block_trims_large_tool_args_as_valid_json(config, skills, workspace):
+    agent = make_agent(config, skills, workspace, FakeClient([]))
+    big = "z" * 30_000
+    keep = [
+        {"role": "assistant", "tool_calls": [
+            {"id": "c1", "type": "function",
+             "function": {"name": "write_file", "arguments": json.dumps({"content": big})}},
+        ]},
+        {"role": "tool", "tool_call_id": "c1", "name": "write_file",
+         "content": json.dumps({"ok": True})},
+    ]
+    out = agent._trim_keep_block(keep, budget_chars=2000)
+    args = out[0]["tool_calls"][0]["function"]["arguments"]
+    assert isinstance(json.loads(args), dict)  # still valid JSON
+    assert len(args) < 30_000
+
+
+def test_elide_args_keeps_valid_json(config, skills, workspace):
+    agent = make_agent(config, skills, workspace, FakeClient([]))
+    call = ToolCall(id="c1", name="write_file",
+                    arguments=json.dumps({"path": "a.txt", "content": "x" * 10_000}))
+    agent.context.add_user("u")
+    agent.context.add_assistant(ChatResponse(tool_calls=[call]))
+    agent._elide_args(call)
+    saved = agent.context.messages[-1]["tool_calls"][0]["function"]["arguments"]
+    assert isinstance(json.loads(saved), dict)
+    assert len(saved) < 10_000
+
+
+async def test_compact_disables_thinking_for_summarizer(config, skills, workspace):
+    config.llm.enable_thinking = True
+    captured = {}
+
+    class CaptureClient(FakeClient):
+        async def chat(self, messages, tools=None, *, temperature, max_tokens, on_event=None,
+                       sampling=None):
+            captured["sampling"] = sampling
+            return self.responses.pop(0)
+
+    client = CaptureClient([ChatResponse(content="summary")])
+    agent = make_agent(config, skills, workspace, client)
+    context = agent.context
+    context.add_user("first")
+    context.add_assistant(ChatResponse(content="answer"))
+    context.add_user("second")
+    assert await agent.compact() is True
+    assert captured["sampling"]["chat_template_kwargs"]["enable_thinking"] is False
+
+
+async def test_aggressive_compact_trims_without_summarizer(config, skills, workspace):
+    class FailingClient(FakeClient):
+        async def chat(self, messages, tools=None, *, temperature, max_tokens, on_event=None,
+                       sampling=None):
+            raise AssertionError("summarizer must not be called for a single segment")
+
+    agent = make_agent(config, skills, workspace, FailingClient([]))
+    context = agent.context
+    context.add_user("y" * 40_000)  # a single segment: nothing can be summarised
+    assert await agent.compact(force=True) is True
+    assert len(context.messages) == 1
+    assert "trimmed for context compaction" in context.messages[0]["content"]
+
+
+async def test_calibration_includes_tool_schemas(config, skills, workspace):
+    agent = make_agent(config, skills, workspace, FakeClient([]))
+    context = agent.context
+    context.add_user("hello")
+    context.set_tools_chars(1000)
+    total = context.sent_chars() + 1000
+    prompt_tokens = max(1, round(total / 3.0))
+    client = FakeClient([ChatResponse(
+        content="ok", usage={"prompt_tokens": prompt_tokens, "completion_tokens": 1},
+    )])
+    agent.client = client
+    await agent._call_model([{"type": "function", "function": {"name": "x"}}])
+    assert abs(context.stats.chars_per_token - total / prompt_tokens) < 0.2

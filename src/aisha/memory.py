@@ -27,9 +27,13 @@ class MemoryBlock:
 
 
 class MemoryStore:
-    def __init__(self, global_dir: Path, project_dir: Path, *, max_block_chars: int) -> None:
+    def __init__(
+        self, global_dir: Path, project_dir: Path, *,
+        max_block_chars: int, index_max_chars: int = 20_000,
+    ) -> None:
         self.dirs = {"global": global_dir, "project": project_dir}
         self.max_block_chars = max_block_chars
+        self.index_max_chars = index_max_chars
         self.errors: list[str] = []
         self._cache: tuple[tuple[Any, ...], list[MemoryBlock]] | None = None
 
@@ -137,6 +141,21 @@ class MemoryStore:
         blocks = self.list()
         if not blocks:
             return ""
-        return "\n".join(
+        lines = [
             f"- {b.label} ({b.scope}) — {b.description or 'no description'}" for b in blocks
-        )
+        ]
+        text = "\n".join(lines)
+        if len(text) <= self.index_max_chars:
+            return text
+        # Truncate and add a hint.
+        remaining = len(lines)
+        result: list[str] = []
+        total = 0
+        for line in lines:
+            if total + len(line) + 1 > self.index_max_chars:
+                break
+            result.append(line)
+            total += len(line) + 1
+            remaining -= 1
+        result.append(f"… +{remaining} more, use memory_list")
+        return "\n".join(result)

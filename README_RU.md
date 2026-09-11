@@ -5,9 +5,7 @@
 OpenAI-совместимому REST API. Это **не веб-приложение**: вся логика — цикл
 «запрос модели → вызовы инструментов → результаты → снова модель» в одном процессе.
 
-Версия: `0.2.10`.
-
-[![Интерфейс агента Aisha](aisha.jpg)](aisha.jpg)
+Версия: `0.2.11`.
 
 ## Возможности
 
@@ -95,7 +93,7 @@ aisha [промпт...] [флаги]
 Приоритет (каждый слой глубоко сливается с предыдущим):
 
 ```
-DEFAULTS  ←  ~/.aisha/config.toml  ←  <workspace>/aisha.toml  ←  env AISHA_*  ←  CLI-флаги
+DEFAULTS  ←  ~/.aisha/config.toml  ←  <workspace>/.aisha/aisha.toml  ←  env AISHA_*  ←  CLI-флаги
 ```
 
 Полный пример `~/.aisha/config.toml`:
@@ -117,13 +115,14 @@ repeat_penalty = 1.1        # необязательно; > 0
 frequency_penalty = 0.0     # необязательно; -2.0 .. 2.0
 max_output_tokens = 32768
 context_window = 32768
-context_soft_limit = 0.85
+context_soft_limit = 0.75
 max_tool_iterations = 25
 tool_guide = false           # true — добавить «Справочник инструментов» в системный промпт (для слабых моделей)
 communication_language = "Russian"  # язык общения агента с пользователем
 enable_thinking = null          # true/false — управление thinking для Qwen-моделей;
                                 # null = серверное умолчание. При true: thinking включён для
                                 # финальных ответов и отключён для ходов с вызовом инструментов.
+compact_tool_schemas = false    # true — вырезать блоки «Example:» из описаний инструментов
 
 [tools]
 shell = true
@@ -145,6 +144,22 @@ allow_private_hosts = false
 [memory]
 enabled = true
 max_block_chars = 30000
+index_max_chars = 20000     # лимит обрезки индекса памяти в системном промпте
+
+[skills]
+index_max_chars = 20000     # лимит обрезки индекса скиллов в системном промпте
+
+[context]
+agents_md_max_chars = 65536 # лимит обрезки AGENTS.md и SYSTEM.md
+
+[compaction]
+summary_max_tokens = 4096   # макс. токенов на запрос саммаризации истории
+trim_user_messages = false  # обрезать также user-сообщения / аргументы tool-call'ов в keep-блоке
+elide_large_tool_args = false  # заменять крупные применённые аргументы превью
+elide_threshold_chars = 4000
+trim_head_chars = 2000      # head при обрезке крупных результатов инструментов
+trim_tail_chars = 1000      # tail при обрезке
+trim_block_fraction = 0.25  # keep-блок должен уместиться в эту долю context_window
 
 [ui]
 theme = "dark"
@@ -194,6 +209,9 @@ input_history = "~/.aisha/input_history.txt"
 
 Файловые инструменты не выходят за пределы workspace (path-traversal блокируется),
 если не включён соответствующий `allow_*_outside_workspace`.
+`run_command` регистрируется только при включённом `tools.shell`, `web_search` — только
+при `tools.web_search`, memory-инструменты — только при `memory.enabled`;
+`ask_user` исключается из схем в неинтерактивном режиме.
 
 ## Память и скиллы
 
@@ -210,7 +228,8 @@ input_history = "~/.aisha/input_history.txt"
 **заменяет** встроенный системный промпт aisha (persona, окружение, правила).
 После него по-прежнему добавляется компактный индекс доступных блоков памяти и
 скиллов. Также добавляются «Справочник инструментов» (`tool_guide = true`),
-`AGENTS.md` и текущий todo-список. Файл обрезается до 64 КБ, как и `AGENTS.md`.
+`AGENTS.md` и текущий todo-список. `AGENTS.md`/`SYSTEM.md` обрезаются до
+`context.agents_md_max_chars` (по умолчанию 65536, 64 КБ).
 
 ## REPL
 
@@ -220,7 +239,7 @@ input_history = "~/.aisha/input_history.txt"
 |---|---|
 | `/help` | справка |
 | `/new` | новая сессия (сброс истории) |
-| `/status` | сервер, модель, workspace, режим, токены |
+| `/status` | сервер, модель, workspace, режим, токены, разбивка контекста |
 | `/tools` | список инструментов |
 | `/skills` | индекс скиллов |
 | `/memory` | блоки памяти |
@@ -270,6 +289,7 @@ src/aisha/
 ├── memory.py     # постоянная память (блоки)
 ├── skills.py     # скиллы (SKILL.md)
 ├── ui.py         # ConsoleUI: rich + prompt_toolkit, REPL
+├── logger.py     # DebugLogger: traces LLM/инструментов в <workspace>/logs/ (--debug)
 ├── fsutil.py     # атомарная запись, проверка путей, human_size
 ├── errors.py     # иерархия исключений
 └── tools/        # реализации инструментов (base, files, shell, web, extras)

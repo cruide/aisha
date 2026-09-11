@@ -11,10 +11,20 @@ from typing import Any
 
 import httpx
 
+from aisha import __version__
 from aisha.errors import ContextOverflowError, ProtocolError, ServerUnavailableError
 
 RETRY_DELAYS = (0.5, 1.0, 2.0)
 RETRY_STATUSES = {429, 502, 503, 504}
+
+
+def _deep_sort(obj: Any) -> Any:
+    """Recursively sort dict keys for stable JSON serialization."""
+    if isinstance(obj, dict):
+        return {k: _deep_sort(v) for k, v in sorted(obj.items())}
+    if isinstance(obj, list):
+        return [_deep_sort(item) for item in obj]
+    return obj
 
 EventCallback = Callable[[str, str], None]  # (kind: "text" | "reasoning", delta)
 
@@ -94,13 +104,18 @@ class LlamaClient:
         request_timeout: float = 600.0,
     ) -> None:
         self.base_url = base_url.rstrip("/")
-        self.model = model
-        headers = {"Authorization": f"Bearer {api_key}"} if api_key else None
+        self.model    = model
+        headers       = {"User-Agent": f"Aisha/{__version__}"}
+
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
         self._http = httpx.AsyncClient(
             base_url=self.base_url,
             timeout=httpx.Timeout(request_timeout, connect=connect_timeout),
             headers=headers,
         )
+
         self._stream_options_ok = True
         self.skip_health = skip_health
 
@@ -224,7 +239,7 @@ class LlamaClient:
         if sampling:
             payload.update(sampling)
         if tools:
-            payload["tools"] = tools
+            payload["tools"] = [_deep_sort(t) for t in tools]
             payload["tool_choice"] = "auto"
         if self._stream_options_ok:
             payload["stream_options"] = {"include_usage": True}
@@ -245,12 +260,17 @@ class LlamaClient:
     async def _stream_once(
         self, payload: dict[str, Any], on_event: EventCallback | None
     ) -> ChatResponse:
+        body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         started = False
         done = False
         result = ChatResponse()
         pending: dict[int, ToolCall] = {}
         try:
-            async with self._http.stream("POST", "/v1/chat/completions", json=payload) as resp:
+            async with self._http.stream(
+                "POST", "/v1/chat/completions",
+                content=body,
+                headers={"Content-Type": "application/json"},
+            ) as resp:
                 if resp.status_code != 200:
                     body = (await resp.aread()).decode("utf-8", "replace")
                     self._raise_for_status(resp.status_code, body, payload)

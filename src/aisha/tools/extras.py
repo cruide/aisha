@@ -5,6 +5,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from rich.markup import escape
+
 from aisha.errors import ToolPermissionError, ToolValidationError
 from aisha.skills import skill_body
 from aisha.tools.base import Tool, ToolContext, ToolResult
@@ -56,6 +58,7 @@ class TodoWriteTool(Tool):
 class AskUserTool(Tool):
     name = "ask_user"
     read_only = True
+    interactive_only = True
     description = (
         "Show a clarification question and wait for the user."
     )
@@ -74,7 +77,7 @@ class AskUserTool(Tool):
             raise ToolPermissionError("ask_user is not available in non-interactive mode")
         options = [str(o) for o in args.get("options") or []]
         answer = await ctx.ask(args["question"], options, bool(args.get("allow_free_text", True)))
-        return ToolResult.success({"answer": answer}, f"answer: {answer[:60]}")
+        return ToolResult.success({"answer": answer}, f"answer: {escape(answer[:60])}")
 
 
 def _store(ctx: ToolContext):

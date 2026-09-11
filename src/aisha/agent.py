@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from typing import Any, Protocol
 
 from aisha.client import ChatResponse, LlamaClient, ToolCall
@@ -26,7 +27,24 @@ SUMMARY_SYSTEM = (
     "tool calls, plain text only."
 )
 SUMMARY_REQUEST = "Summarise the conversation above following the structure described."
-SUMMARY_OUTPUT_TOKENS = 4096
+
+_EXAMPLE_RE = re.compile(r"\s*Example:.*$", re.DOTALL)
+
+
+def strip_examples(schemas: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Remove 'Example:' blocks from tool descriptions for compact schemas."""
+    result = []
+    for spec in schemas:
+        fn = spec.get("function")
+        if fn and isinstance(fn.get("description"), str):
+            new_fn = dict(fn)
+            new_fn["description"] = _EXAMPLE_RE.sub("", fn["description"]).rstrip()
+            new_spec = dict(spec)
+            new_spec["function"] = new_fn
+            result.append(new_spec)
+        else:
+            result.append(spec)
+    return result
 
 
 class AgentEvents(Protocol):
@@ -93,19 +111,30 @@ class AgentLoop:
         llm = self.config.llm
         iterations = 0
         limit_hit = False
-        skip_compact = False
+        compact_gave_up = False
         overflow_retried = False
+        # Pre-compute tools char count for compaction estimation.
+        all_tools = self.registry.schemas(
+            read_only=self.config.read_only,
+            interactive=self.tool_ctx.interactive,
+        )
+        self.context.set_tools_chars(len(json.dumps(all_tools, ensure_ascii=False)))
         while True:
-            if not skip_compact and self.context.needs_compaction():
+            if not compact_gave_up and self.context.needs_compaction():
                 await self.compact()
                 if self.context.needs_compaction():
-                    skip_compact = True
+                    # Retrying the summarizer in the same turn would not help and
+                    # would waste model calls; give up until the next user turn.
+                    compact_gave_up = True
                     self.events.on_notice(
                         "Compaction did not free enough context; "
                         "continuing without retrying.",
                         "warn",
                     )
-            tools = None if limit_hit else self.registry.schemas(read_only=self.config.read_only)
+            tools = None if limit_hit else self.registry.schemas(
+                read_only=self.config.read_only,
+                interactive=self.tool_ctx.interactive,
+            )
             try:
                 response = await self._call_model(tools)
             except ContextOverflowError:
@@ -123,6 +152,9 @@ class AgentLoop:
                 )
                 if not await self.compact(force=True):
                     raise
+                # Avoid re-running the summarizer immediately if the context is
+                # still over the soft limit after the emergency compaction.
+                compact_gave_up = self.context.needs_compaction()
                 continue
             if response.interrupted:
                 self.context.add_interrupted_assistant(response)
@@ -164,19 +196,23 @@ class AgentLoop:
                 continue
             await self._execute_calls(response.tool_calls,
                                       truncated=response.finish_reason == "length")
-            skip_compact = False
 
     def _refuse_calls(self, calls: list[ToolCall], message: str) -> None:
         for call in calls:
             result = ToolResult.failure("IterationLimit", message)
-            self.context.add_tool_result(call.id, call.name, result.to_json())
+            self.context.add_tool_result(call.id, call.name, result.to_model_json())
 
     async def _call_model(self, tools: list[dict[str, Any]] | None) -> ChatResponse:
         if not self._calibrated:
             await self._calibrate()
         llm = self.config.llm
+        if tools and llm.compact_tool_schemas:
+            tools = strip_examples(tools)
         messages = self.context.all_messages()
-        chars_in = self.context.sent_chars()
+        # Include tool schemas in the calibration numerator: prompt_tokens
+        # reported by the server counts them too, so omitting them would skew
+        # chars_per_token and distort the context estimate.
+        chars_in = self.context.sent_chars() + (self.context.tools_chars if tools else 0)
         est_in = self.context.estimate_sent_tokens()
         sampling = {
             key: value for key, value in (
@@ -193,15 +229,12 @@ class AgentLoop:
             sampling["chat_template_kwargs"] = {
                 "enable_thinking": llm.enable_thinking if tools is None else False,
             }
-        # est_in already includes the system prompt and the message history. Only
-        # the tool schemas (sent with every request) and the chat-template special
-        # tokens are missing from it. Reserve space for those plus a safety margin
-        # for estimate error, otherwise max_tokens overshoots and the server
-        # truncates tool-call JSON mid-stream.
-        cpt = self.context.stats.chars_per_token
-        overhead = int(len(json.dumps(tools, ensure_ascii=False)) / cpt) if tools else 0
-        overhead += max(512, est_in // 20)
-        remaining = llm.context_window - est_in - overhead
+        # est_in already includes the system prompt, the message history and the
+        # tool schemas (estimate_sent_tokens adds tools_chars). Reserve a safety
+        # margin for the chat-template special tokens and estimate error, otherwise
+        # max_tokens overshoots and the server truncates tool-call JSON mid-stream.
+        overhead = max(512, est_in // 20)
+        remaining = int(llm.context_window) - est_in - overhead
         max_tokens = max(256, min(llm.max_output_tokens, remaining))
         if self.config.ui.debug:
             self.events.on_debug("→ model", self._format_request(messages, est_in))
@@ -255,7 +288,14 @@ class AgentLoop:
         return text if len(text) <= limit else text[:limit] + "…"
 
     def _format_request(self, messages: list[dict[str, Any]], est_tokens: int) -> str:
-        lines = [f"messages: {len(messages)}, ~{est_tokens} tokens"]
+        ctx = self.context
+        sys_c = ctx._system_chars
+        tools_c = ctx.tools_chars
+        hist_c = ctx._messages_chars
+        lines = [
+            f"messages: {len(messages)}, ~{est_tokens} tokens | "
+            f"system={sys_c}, tools={tools_c}, history={hist_c}",
+        ]
         for m in messages:
             role = m.get("role")
             if m.get("tool_calls"):
@@ -320,31 +360,83 @@ class AgentLoop:
             result = await self.registry.execute(call.name, args, self.tool_ctx)
         if not silent:
             self.events.on_tool_end(call, result)
-        self.context.add_tool_result(call.id, call.name, result.to_json())
+        self.context.add_tool_result(call.id, call.name, result.to_model_json())
+        # Elide large tool arguments after successful execution.
+        if result.ok and self.config.compaction.elide_large_tool_args:
+            self._elide_args(call)
         if debug_logger.path:
             debug_logger.log_tool_result(call.name, call.id, result.to_json(), ok=result.ok)
         if self.config.ui.debug and not silent:
             self.events.on_debug(f"tool: {call.name}", self._clip(result.to_json(), 2000))
 
     # ------------------------------------------------------------ compaction
-    _KEEP_TOOL_HEAD = 2000
-    _KEEP_TOOL_TAIL = 1000
-    _KEEP_BLOCK_FRACTION = 0.25
+
+    def _elide_args(self, call: ToolCall) -> None:
+        """Replace large tool-call arguments in history with a valid JSON placeholder.
+
+        The stored arguments must stay valid JSON: an invalid string would be
+        replayed to the server on the next request and can make it fail.
+        """
+        threshold = self.config.compaction.elide_threshold_chars
+        if len(call.arguments) <= threshold:
+            return
+        new_args = json.dumps(
+            {
+                "_elided": f"large arguments ({len(call.arguments)} chars) applied "
+                "successfully; use read_file to inspect the result",
+            },
+            ensure_ascii=False,
+        )
+        # Find and replace the arguments in the saved history.
+        for msg in self.context.messages:
+            if msg.get("role") != "assistant":
+                continue
+            for tc in msg.get("tool_calls") or []:
+                if tc.get("id") == call.id:
+                    tc["function"]["arguments"] = new_args
+                    return
+
+    # ------------------------------------------------------ compaction sizing
+    def _effective_summary_tokens(self) -> int:
+        """Bound the summary so it cannot dominate a small context window."""
+        window = int(self.config.llm.context_window)
+        configured = int(self.config.compaction.summary_max_tokens)
+        return max(256, min(configured, max(256, window // 8)))
+
+    def _history_budget_tokens(self) -> int:
+        """Tokens available to history (after system prompt and tool schemas)."""
+        ctx = self.context
+        ctx.system_prompt()
+        cpt = ctx.stats.chars_per_token
+        sys_tokens = int(ctx._system_chars / cpt)
+        tools_tokens = int(ctx.tools_chars / cpt)
+        return max(1024, ctx.input_budget() - sys_tokens - tools_tokens)
+
+    def _keep_budget_chars(self, summary_tokens: int) -> int:
+        """Size the keep block so summary + recent history stay well under budget."""
+        ctx = self.context
+        target_tokens = max(512, int(self._history_budget_tokens() * 0.5))
+        keep_tokens = max(256, target_tokens - summary_tokens)
+        return max(512, int(keep_tokens * ctx.stats.chars_per_token))
 
     async def compact(self, *, force: bool = False) -> bool:
-        blocks = self.context.turn_blocks()
-        if len(blocks) < 2:
-            if force:
-                return await self._aggressive_compact(blocks[0] if blocks else [])
-            return False
-        old = [m for block in blocks[:-1] for m in block]
-        keep = blocks[-1]
+        self.context.system_prompt()
+        summary_tokens = self._effective_summary_tokens()
+        keep_budget = self._keep_budget_chars(summary_tokens)
+        old, keep = self.context.split_for_compaction(keep_budget)
+        if not old:
+            return await self._aggressive_compact(keep, budget_chars=keep_budget)
         self.events.on_notice("Compacting conversation history…")
         messages = [
             {"role": "system", "content": SUMMARY_SYSTEM},
-            *self._summary_input(old),
+            *self._summary_input(old, summary_tokens),
             {"role": "user", "content": SUMMARY_REQUEST},
         ]
+        # Summarisation is mechanical: never let Qwen-style thinking consume the
+        # whole output budget (which would leave the summary empty).
+        sampling = None
+        if self.config.llm.enable_thinking is not None:
+            sampling = {"chat_template_kwargs": {"enable_thinking": False}}
         summary: str | None = None
         try:
             if debug_logger.path:
@@ -354,13 +446,15 @@ class AgentLoop:
                         "messages": messages,
                         "tools": None,
                         "temperature": 0.1,
-                        "max_tokens": SUMMARY_OUTPUT_TOKENS,
+                        "max_tokens": summary_tokens,
+                        **(sampling or {}),
                     },
                     est_tokens=0,
                     message_count=len(messages),
                 )
             response = await self.client.chat(
-                messages, None, temperature=0.1, max_tokens=SUMMARY_OUTPUT_TOKENS,
+                messages, None, temperature=0.1, max_tokens=summary_tokens,
+                sampling=sampling,
             )
             summary = response.content.strip() or None
             if debug_logger.path:
@@ -377,72 +471,106 @@ class AgentLoop:
             )
         if not summary:
             summary = self._fallback_summary(old)
-        # Trim oversized tool-results inside the keep block so that the
-        # compacted history actually fits in the context window.
-        keep = self._trim_keep_block(keep)
+        # Trim oversized tool-results/arguments inside the keep block so that the
+        # compacted history actually fits in the context window. A forced
+        # (overflow-recovery) compaction also trims user messages if needed.
+        self._trim_keep_block(keep, budget_chars=keep_budget, aggressive=force)
         self.context.replace_history(summary, keep)
         self.events.on_notice(f"History compacted: {len(old)} messages → summary.")
         return True
 
-    def _trim_keep_block(self, keep: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Trim the last-turn block so the compacted history fits comfortably.
+    @staticmethod
+    def _clip_middle(text: str, head: int, tail: int) -> str:
+        return text[:head] + "\n[… trimmed for context compaction …]\n" + text[-tail:]
+
+    def _trim_keep_block(
+        self,
+        keep: list[dict[str, Any]],
+        *,
+        budget_chars: int | None = None,
+        aggressive: bool = False,
+        notify: bool = True,
+    ) -> list[dict[str, Any]]:
+        """Shrink the keep block so the compacted history fits comfortably.
 
         ``reasoning_content`` is dropped (the model must not replay its own
-        chain-of-thought) and oversized tool results are reduced to a head + tail,
-        earliest first, until the block fits ``_KEEP_BLOCK_FRACTION`` of the
-        context window. This leaves room for the summary prefix and further work.
+        chain-of-thought). Oversized tool results and (machine-generated)
+        tool-call arguments are reduced first; when ``aggressive`` is set or
+        ``trim_user_messages`` is enabled, user messages are trimmed too.
+        Argument replacements always stay valid JSON — an invalid string would
+        be replayed to the server on the next request.
         """
+        cfg = self.config.compaction
         cpt = self.context.stats.chars_per_token
-        budget_chars = int(self.config.llm.context_window * self._KEEP_BLOCK_FRACTION * cpt)
+        if budget_chars is None:
+            budget_chars = int(self.config.llm.context_window * cfg.trim_block_fraction * cpt)
+        head = cfg.trim_head_chars
+        tail = cfg.trim_tail_chars
         for msg in keep:
             msg.pop("reasoning_content", None)
         total = sum(self.context._chars(m) for m in keep)
         if total <= budget_chars:
             return keep
         trimmed = False
+        # 1) Oversized tool results.
         for msg in keep:
             if total <= budget_chars:
                 break
             if msg.get("role") != "tool":
                 continue
             content = msg.get("content", "")
-            if len(content) <= self._KEEP_TOOL_HEAD + self._KEEP_TOOL_TAIL:
+            if not isinstance(content, str) or len(content) <= head + tail:
                 continue
-            msg["content"] = (
-                content[:self._KEEP_TOOL_HEAD]
-                + "\n[… trimmed for context compaction …]\n"
-                + content[-self._KEEP_TOOL_TAIL:]
-            )
+            msg["content"] = self._clip_middle(content, head, tail)
             total -= len(content) - len(msg["content"])
             trimmed = True
-        if trimmed:
-            self.events.on_notice("Trimmed large tool results in the keep block.", "warn")
+        # 2) Oversized assistant tool-call arguments (kept as valid JSON).
+        for msg in keep:
+            if total <= budget_chars:
+                break
+            if msg.get("role") != "assistant":
+                continue
+            for tc in msg.get("tool_calls") or []:
+                args = tc.get("function", {}).get("arguments", "")
+                if not isinstance(args, str) or len(args) <= head + tail:
+                    continue
+                replacement = json.dumps(
+                    {"_trimmed": f"{len(args)} chars removed after execution"},
+                    ensure_ascii=False,
+                )
+                total -= len(args) - len(replacement)
+                tc["function"]["arguments"] = replacement
+                trimmed = True
+                if total <= budget_chars:
+                    break
+        # 3) User messages (only for aggressive compaction or when configured).
+        if aggressive or cfg.trim_user_messages:
+            for msg in keep:
+                if total <= budget_chars:
+                    break
+                if msg.get("role") != "user":
+                    continue
+                content = msg.get("content", "")
+                if isinstance(content, str) and len(content) > head + tail:
+                    msg["content"] = self._clip_middle(content, head, tail)
+                    total -= len(content) - len(msg["content"])
+                    trimmed = True
+        if trimmed and notify:
+            self.events.on_notice("Trimmed large results in the keep block.", "warn")
         return keep
 
-    async def _aggressive_compact(self, block: list[dict[str, Any]]) -> bool:
-        """Trim large tool-results within a single turn block.
-
-        Used when ``force=True`` but the history contains only one block and
-        normal compaction (which needs ≥2 blocks) is impossible.
-        """
-        trimmed = 0
-        for msg in block:
-            msg.pop("reasoning_content", None)
-            if msg.get("role") != "tool":
-                continue
-            content = msg.get("content", "")
-            if len(content) > 4000:
-                msg["content"] = (
-                    content[:2000]
-                    + "\n[… trimmed for context compaction …]\n"
-                    + content[-1000:]
-                )
-                trimmed += 1
-        if trimmed:
-            self.context.replace_history(None, block)
+    async def _aggressive_compact(
+        self, keep: list[dict[str, Any]], *, budget_chars: int | None = None
+    ) -> bool:
+        """Reduce a single-segment history in place (no summarizer available)."""
+        before = sum(self.context._chars(m) for m in keep)
+        self._trim_keep_block(keep, budget_chars=budget_chars, aggressive=True, notify=False)
+        after = sum(self.context._chars(m) for m in keep)
+        if after < before:
+            self.context.replace_history(None, keep)
             self.events.on_notice(
-                f"Aggressive compaction: trimmed {trimmed} tool result(s) in the current block.",
-                "warn",
+                f"Aggressive compaction: reduced the current block from "
+                f"{before} to {after} chars.", "warn",
             )
             return True
         self.events.on_notice("History is too short, nothing to compact.")
@@ -456,10 +584,14 @@ class AgentLoop:
             and msg["content"].startswith("[Summary of the previous conversation]")
         )
 
-    def _summary_input(self, old: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _summary_input(
+        self, old: list[dict[str, Any]], summary_tokens: int | None = None
+    ) -> list[dict[str, Any]]:
         """Build the summarizer input, bounded to a conservative token budget."""
         llm = self.config.llm
         cpt = self.context.stats.chars_per_token
+        if summary_tokens is None:
+            summary_tokens = self._effective_summary_tokens()
         fixed = [
             {"role": "system", "content": SUMMARY_SYSTEM},
             {"role": "user", "content": SUMMARY_REQUEST},
@@ -468,44 +600,61 @@ class AgentLoop:
         reserve = max(1024, llm.context_window // 32)
         budget_chars = max(
             1024,
-            int((llm.context_window - reserve - SUMMARY_OUTPUT_TOKENS) * cpt) - fixed_chars,
+            int((llm.context_window - reserve - summary_tokens) * cpt) - fixed_chars,
         )
         return self._bounded_history(old, budget_chars)
 
     def _bounded_history(
         self, old: list[dict[str, Any]], budget_chars: int
     ) -> list[dict[str, Any]]:
-        """Trim `old` to its critical fragments when it exceeds `budget_chars`."""
+        """Trim `old` to its critical fragments when it exceeds `budget_chars`.
+
+        Only whole segments are kept, so an assistant ``tool_calls`` message is
+        never separated from its tool results (which would make the summary
+        request invalid for the server).
+        """
         if sum(self.context._chars(m) for m in old) <= budget_chars:
             return list(old)
-        picked: dict[int, dict[str, Any]] = {}
-        # Existing previous summary and its acknowledgement.
-        for i, m in enumerate(old):
-            if self._is_summary_message(m):
-                picked[i] = m
-                if i + 1 < len(old) and old[i + 1].get("role") == "assistant":
-                    picked[i + 1] = old[i + 1]
-        # The original task (first non-summary user message), clipped.
-        for i, m in enumerate(old):
-            if m.get("role") == "user" and i not in picked:
-                picked[i] = {"role": "user",
-                             "content": self._clip(str(m.get("content", "")), 2000)}
+        segments = self.context.segments(old)
+        if not segments:
+            return []
+        picked: list[list[dict[str, Any]]] = [segments[-1]]
+        total = sum(self.context._chars(m) for m in segments[-1])
+        for seg in reversed(segments[:-1]):
+            seg_chars = sum(self.context._chars(m) for m in seg)
+            if total + seg_chars > budget_chars:
                 break
-        # The most recent user/assistant context.
-        for i in range(len(old) - 1, -1, -1):
-            if i in picked or old[i].get("role") not in ("user", "assistant"):
-                continue
-            picked[i] = old[i]
-            if len(picked) >= 6:
-                break
-        result = [m for _, m in sorted(picked.items())]
-        skipped = len(old) - len(picked)
+            picked.insert(0, seg)
+            total += seg_chars
+        # Preserve the original task / prior summary from the first segment.
+        if picked[0] is not segments[0]:
+            first = self._clip_segment(segments[0], 2000)
+            picked.insert(0, first)
+            total += sum(self.context._chars(m) for m in first)
+        result = [m for seg in picked for m in seg]
+        included = sum(len(seg) for seg in picked)
+        skipped = len(old) - included
         if skipped > 0:
             result.append({
                 "role": "user",
                 "content": f"[{skipped} earlier messages omitted from the summary input]",
             })
+        if sum(self.context._chars(m) for m in result) > budget_chars:
+            self._trim_keep_block(result, budget_chars=budget_chars, aggressive=True,
+                                   notify=False)
         return result
+
+    def _clip_segment(
+        self, segment: list[dict[str, Any]], limit: int
+    ) -> list[dict[str, Any]]:
+        """Copy a segment, clipping the first message's text to ``limit`` chars."""
+        clipped: list[dict[str, Any]] = []
+        for i, msg in enumerate(segment):
+            copy = dict(msg)
+            if i == 0 and isinstance(copy.get("content"), str):
+                copy["content"] = self._clip(copy["content"], limit)
+            clipped.append(copy)
+        return clipped
 
     def _fallback_summary(self, old: list[dict[str, Any]]) -> str:
         """Deterministic summary used when the summarizer model call fails or returns empty."""

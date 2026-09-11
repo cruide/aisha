@@ -75,6 +75,14 @@ class ToolResult:
             ensure_ascii=False,
         )
 
+    def to_model_json(self) -> str:
+        """Serialize for the model: omits service-only meta keys like duration_ms."""
+        model_meta = {k: v for k, v in self.meta.items() if k != "duration_ms"}
+        return json.dumps(
+            {"ok": self.ok, "data": self.data, "error": self.error, "meta": model_meta},
+            ensure_ascii=False,
+        )
+
 
 async def require_confirmation(ctx: ToolContext, request: ConfirmRequest) -> None:
     """Ask the user; 'a' remembers approval for the session, 'y' once, anything else cancels."""
@@ -149,6 +157,7 @@ class Tool(ABC):
     parameters: dict[str, Any] = {"type": "object", "properties": {}}
     read_only: bool = False  # True => allowed in --read-only mode
     silent: bool = False  # True => do not show call/result lines in the UI
+    interactive_only: bool = False  # True => excluded from schemas in non-interactive mode
 
     def schema(self) -> dict[str, Any]:
         return {
@@ -182,8 +191,11 @@ class ToolRegistry:
     def names(self) -> list[str]:
         return list(self._tools)
 
-    def schemas(self, *, read_only: bool = False) -> list[dict[str, Any]]:
-        return [t.schema() for t in self._tools.values() if not read_only or t.read_only]
+    def schemas(self, *, read_only: bool = False, interactive: bool = True) -> list[dict[str, Any]]:
+        return [
+            t.schema() for t in self._tools.values()
+            if (not read_only or t.read_only) and (interactive or not t.interactive_only)
+        ]
 
     async def execute(self, name: str, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         started = time.perf_counter()

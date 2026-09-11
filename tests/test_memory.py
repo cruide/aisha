@@ -17,3 +17,14 @@ def test_project_overrides_global_and_replace(tmp_path):
         store.set("bad name!", "d", "v")
     with pytest.raises(ToolValidationError):
         store.set("big", "d", "x" * 101)
+
+
+def test_index_text_truncates(tmp_path):
+    store = MemoryStore(tmp_path / "g", tmp_path / "p", max_block_chars=1000,
+                        index_max_chars=50)
+    for i in range(10):
+        store.set(f"block{i}", "description text here", "value")
+    text = store.index_text()
+    assert "use memory_list" in text
+    assert "block0" in text
+    assert "block9" not in text

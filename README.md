@@ -7,9 +7,7 @@ A local console AI agent in Python 3.11+. Works with an external
 OpenAI-compatible REST API. This is **not a web app**: the entire logic is a loop
 of "model request → tool calls → results → model again" in a single process.
 
-Version: `0.2.10`.
-
-[![Aisha interface](aisha.jpg)](aisha.jpg)
+Version: `0.2.11`.
 
 ## Features
 
@@ -97,7 +95,7 @@ aisha [prompt...] [flags]
 Priority (each layer deep-merges with the previous):
 
 ```
-DEFAULTS  ←  ~/.aisha/config.toml  ←  <workspace>/aisha.toml  ←  env AISHA_*  ←  CLI flags
+DEFAULTS  ←  ~/.aisha/config.toml  ←  <workspace>/.aisha/aisha.toml  ←  env AISHA_*  ←  CLI flags
 ```
 
 Full example of `~/.aisha/config.toml`:
@@ -119,13 +117,14 @@ repeat_penalty = 1.1        # optional; > 0
 frequency_penalty = 0.0     # optional; -2.0 .. 2.0
 max_output_tokens = 32768
 context_window = 32768
-context_soft_limit = 0.85
+context_soft_limit = 0.75
 max_tool_iterations = 25
 tool_guide = false           # true — add "Tool Guide" to system prompt (for weak models)
 communication_language = "Russian"  # agent's response language
 enable_thinking = null          # true/false — control Qwen-style thinking per request;
                                 # null = server default. When true: thinking is enabled for
                                 # final answers and disabled for tool-calling turns.
+compact_tool_schemas = false    # true — strip "Example:" blocks from tool descriptions
 
 [tools]
 shell = true
@@ -147,6 +146,22 @@ allow_private_hosts = false
 [memory]
 enabled = true
 max_block_chars = 30000
+index_max_chars = 20000     # truncation limit for the memory index in the system prompt
+
+[skills]
+index_max_chars = 20000     # truncation limit for the skills index in the system prompt
+
+[context]
+agents_md_max_chars = 65536 # truncation limit for AGENTS.md and SYSTEM.md
+
+[compaction]
+summary_max_tokens = 4096   # max tokens for the history-summary request
+trim_user_messages = false  # also trim user messages / tool-call args in the keep block
+elide_large_tool_args = false  # replace large applied tool args with a preview
+elide_threshold_chars = 4000
+trim_head_chars = 2000      # head chars kept when trimming oversized tool results
+trim_tail_chars = 1000      # tail chars kept when trimming
+trim_block_fraction = 0.25  # keep block must fit this fraction of context_window
 
 [ui]
 theme = "dark"
@@ -196,6 +211,9 @@ if it was disabled globally. This protects against a "trojan" config in a cloned
 
 File tools do not escape the workspace (path traversal is blocked)
 unless the corresponding `allow_*_outside_workspace` is enabled.
+`run_command` is registered only if `tools.shell` is enabled, `web_search` only if
+`tools.web_search` is enabled, memory tools only if `memory.enabled`;
+`ask_user` is excluded from schemas in non-interactive mode.
 
 ## Memory and Skills
 
@@ -212,7 +230,8 @@ If a file `<workspace>/.aisha/SYSTEM.md` exists in the project root, its content
 **replaces** the built-in aisha system prompt (persona, environment, rules).
 A compact index of the available memory blocks and skills is still appended after it.
 The "Tool Guide" (`tool_guide = true`), `AGENTS.md`, and the current todo list are
-also appended. The file is truncated to 64 KB, same as `AGENTS.md`.
+also appended. `AGENTS.md`/`SYSTEM.md` are truncated to `context.agents_md_max_chars`
+(default 65536, 64 KB).
 
 ## REPL
 
@@ -222,7 +241,7 @@ Commands inside interactive mode:
 |---|---|
 | `/help` | help |
 | `/new` | new session (reset history) |
-| `/status` | server, model, workspace, mode, tokens |
+| `/status` | server, model, workspace, mode, tokens, context breakdown |
 | `/tools` | tool list |
 | `/skills` | skill index |
 | `/memory` | memory blocks |
@@ -272,6 +291,7 @@ src/aisha/
 ├── memory.py     # persistent memory (blocks)
 ├── skills.py     # skills (SKILL.md)
 ├── ui.py         # ConsoleUI: rich + prompt_toolkit, REPL
+├── logger.py     # DebugLogger: LLM/tool traces to <workspace>/logs/ (--debug)
 ├── fsutil.py     # atomic write, path checks, human_size
 ├── errors.py     # exception hierarchy
 └── tools/        # tool implementations (base, files, shell, web, extras)

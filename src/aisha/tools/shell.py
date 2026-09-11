@@ -9,6 +9,8 @@ import re
 import subprocess
 from typing import Any
 
+from rich.markup import escape
+
 from aisha.errors import ToolPermissionError, ToolTimeoutError, ToolValidationError
 from aisha.tools.base import ConfirmRequest, Tool, ToolContext, ToolResult, require_confirmation
 from aisha.tools.files import resolve_path
@@ -178,7 +180,8 @@ async def run_process(
 class RunCommandTool(Tool):
     name = "run_command"
     description = (
-        "Run one non-interactive command and return stdout, stderr and exit_code. Example: run_command(command=\"pytest\")."
+        "Run one non-interactive command and return stdout, stderr and exit_code. "
+        "Example: run_command(command=\"pytest\")."
     )
     parameters = {
         "type": "object",
@@ -231,6 +234,6 @@ class RunCommandTool(Tool):
             summary, truncated=stream_truncated or t1 or t2,
         )
         if code != 0:
-            result.summary = f"exit {code}" + (f": {stderr.strip().splitlines()[-1][:120]}"
+            result.summary = f"exit {code}" + (f": {escape(stderr.strip().splitlines()[-1][:120])}"
                                               if stderr.strip() else "")
         return result

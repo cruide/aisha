@@ -239,10 +239,15 @@ async def _amain(args: argparse.Namespace) -> int:
             config.llm.context_window = n_ctx
             config.llm.max_output_tokens = n_ctx
 
-        memory = (MemoryStore(config.home_dir / "memory", config.project_dir / "memory",
-                              max_block_chars=config.memory.max_block_chars)
-                  if config.memory.enabled else None)
-        skills = SkillIndex(config.home_dir / "skills", config.project_dir / "skills")
+        memory = (MemoryStore(
+            config.home_dir / "memory", config.project_dir / "memory",
+            max_block_chars=config.memory.max_block_chars,
+            index_max_chars=config.memory.index_max_chars,
+        ) if config.memory.enabled else None)
+        skills = SkillIndex(
+            config.home_dir / "skills", config.project_dir / "skills",
+            index_max_chars=config.skills.index_max_chars,
+        )
         tool_guide = (build_tool_guide(registry.schemas(read_only=config.read_only))
                       if config.llm.tool_guide else "")
         context = ConversationContext(config, memory, skills, tool_guide)

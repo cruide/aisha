@@ -11,6 +11,7 @@ from typing import Any
 from urllib.parse import urljoin, urlparse
 
 import httpx
+from rich.markup import escape
 
 from aisha.errors import ToolPermissionError, ToolValidationError
 from aisha.tools.base import Tool, ToolContext, ToolResult
@@ -67,7 +68,8 @@ class WebSearchTool(Tool):
     name = "web_search"
     read_only = True
     description = (
-        "Search the web and return titles, URLs and snippets. Example: web_search(query=\"how to set up llama.cpp\")."
+        "Search the web and return titles, URLs and snippets. "
+        "Example: web_search(query=\"how to set up llama.cpp\")."
     )
     parameters = {
         "type": "object",
@@ -121,7 +123,8 @@ class WebFetchTool(Tool):
     async def run(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         cfg = ctx.config.web
         url: str = args["url"].strip()
-        max_chars = min(int(args.get("max_chars") or cfg.max_content_chars), cfg.max_content_chars)
+        max_chars = max(1, min(int(args.get("max_chars") or cfg.max_content_chars),
+                                cfg.max_content_chars))
         headers = {
             "User-Agent": USER_AGENT,
             "Accept": "text/html,application/xhtml+xml,text/*;q=0.9,*/*;q=0.5",
@@ -163,5 +166,5 @@ class WebFetchTool(Tool):
             text, truncated = text[:max_chars], True
         return ToolResult.success(
             {"url": url, "title": title, "content_type": ctype, "text": text},
-            f"{title[:60] or url} · {len(text)} chars", truncated=truncated,
+            f"{escape(title[:60] or url)} · {len(text)} chars", truncated=truncated,
         )
