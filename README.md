@@ -9,6 +9,8 @@ of "model request → tool calls → results → model again" in a single proces
 
 Version: `0.2.11`.
 
+[![Aisha interface](aisha.jpg)](aisha.jpg)
+
 ## Features
 
 - **Files** — read, write, inline editing, listing, `glob` search, and `grep`;
