@@ -23,8 +23,8 @@ def test_index_text_truncates(tmp_path):
     store = MemoryStore(tmp_path / "g", tmp_path / "p", max_block_chars=1000,
                         index_max_chars=50)
     for i in range(10):
-        store.set(f"block{i}", "description text here", "value")
+        store.set(f"block{i}", "description text here", f"value{i}")
     text = store.index_text()
     assert "use memory_list" in text
-    assert "block0" in text
-    assert "block9" not in text
+    assert "value0" in text
+    assert "value9" not in text

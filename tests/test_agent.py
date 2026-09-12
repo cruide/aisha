@@ -387,19 +387,41 @@ def test_system_md_keeps_memory_and_skills_index(config, skills, workspace):
     context = ConversationContext(config, store, skills)
     prompt = context.system_prompt()
     assert prompt.startswith("CUSTOM")
-    assert "style" in prompt
+    assert "d: \nv;" in prompt
     assert "s1" in prompt
     assert "## Persistent memory" in prompt
     assert "## Skills" in prompt
 
 
-def test_system_md_without_memory_omits_memory_section(config, skills, workspace):
+def test_empty_memory_and_skills_omit_sections(config, skills, workspace):
+    context = ConversationContext(config, None, skills)
+    prompt = context.system_prompt()
+    assert "## Persistent memory" not in prompt
+    assert "## Skills" not in prompt
+    assert "Memory: none" not in prompt
+    assert "Skills: none" not in prompt
+
+
+def test_system_md_without_memory_omits_sections(config, skills, workspace):
     (workspace / ".aisha").mkdir(exist_ok=True)
     (workspace / ".aisha" / "SYSTEM.md").write_text("CUSTOM", encoding="utf-8")
     context = ConversationContext(config, None, skills)
     prompt = context.system_prompt()
     assert "## Persistent memory" not in prompt
-    assert "## Skills" in prompt
+    assert "## Skills" not in prompt
+
+
+def test_environment_section_has_datetime_and_no_mode(config, skills, workspace):
+    context = ConversationContext(config, None, skills)
+    prompt = context.system_prompt()
+    env = prompt.split("## Environment", 1)[1].split("## Rules", 1)[0]
+    assert "- OS:" in env
+    assert "- Default shell:" in env
+    assert "- Workspace" in env
+    assert "- Current date and time:" in env
+    assert "mode:" not in env
+    assert "permission=" not in env
+    assert "Current time:" not in prompt
 
 
 async def test_silent_tool_skips_events(config, skills, workspace):

@@ -141,10 +141,17 @@ class MemoryStore:
         blocks = self.list()
         if not blocks:
             return ""
+
         lines = [
-            f"- {b.label} ({b.scope}) — {b.description or 'no description'}" for b in blocks
+            f"- {b.description or ''}: \n{b.value};" for b in blocks
         ]
+        
+        # lines = [
+        #     f"- {b.label} ({b.scope}) — {b.description or 'no description'}" for b in blocks
+        # ]
+
         text = "\n".join(lines)
+
         if len(text) <= self.index_max_chars:
             return text
         # Truncate and add a hint.

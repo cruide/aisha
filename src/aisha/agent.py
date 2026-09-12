@@ -26,6 +26,7 @@ SUMMARY_SYSTEM = (
     "3) important facts and decisions; 4) unfinished tasks and next steps. No fluff, no "
     "tool calls, plain text only."
 )
+
 SUMMARY_REQUEST = "Summarise the conversation above following the structure described."
 
 _EXAMPLE_RE = re.compile(r"\s*Example:.*$", re.DOTALL)

@@ -7,7 +7,7 @@ A local console AI agent in Python 3.11+. Works with an external
 OpenAI-compatible REST API. This is **not a web app**: the entire logic is a loop
 of "model request → tool calls → results → model again" in a single process.
 
-Version: `0.2.11`.
+Version: `0.2.12`.
 
 [![Aisha interface](aisha.jpg)](aisha.jpg)
 
@@ -230,10 +230,10 @@ unless the corresponding `allow_*_outside_workspace` is enabled.
 
 If a file `<workspace>/.aisha/SYSTEM.md` exists in the project root, its content
 **replaces** the built-in aisha system prompt (persona, environment, rules).
-A compact index of the available memory blocks and skills is still appended after it.
-The "Tool Guide" (`tool_guide = true`), `AGENTS.md`, and the current todo list are
-also appended. `AGENTS.md`/`SYSTEM.md` are truncated to `context.agents_md_max_chars`
-(default 65536, 64 KB).
+A compact index of the available memory blocks and skills is still appended after it
+(only when at least one block/skill exists). The "Tool Guide" (`tool_guide = true`),
+`AGENTS.md`, and the current todo list are also appended. `AGENTS.md`/`SYSTEM.md` are
+truncated to `context.agents_md_max_chars` (default 65536, 64 KB).
 
 ## REPL
 
