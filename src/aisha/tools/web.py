@@ -68,8 +68,8 @@ class WebSearchTool(Tool):
     name = "web_search"
     read_only = True
     description = (
-        "Search the web and return titles, URLs and snippets. "
-        "Example: web_search(query=\"how to set up llama.cpp\")."
+        "Search the web for a focused query. Returns ranked titles, URLs and snippets; use web_fetch "
+        "on a promising URL when the full page content is needed."
     )
     parameters = {
         "type": "object",
@@ -109,7 +109,8 @@ class WebFetchTool(Tool):
     name = "web_fetch"
     read_only = True
     description = (
-        "Fetch a web page and return extracted text. Example: web_fetch(url=\"https://example.com/docs\")."
+        "Fetch a URL and extract readable page text. Use the exact URL from search results; output may be "
+        "truncated, so request a relevant page or section rather than relying on the whole site."
     )
     parameters = {
         "type": "object",
@@ -145,7 +146,8 @@ class WebFetchTool(Tool):
                         body = bytearray()
                         truncated = False
                         async for chunk in resp.aiter_bytes():
-                            body.extend(chunk)
+                            remaining = cfg.max_page_bytes - len(body)
+                            body.extend(chunk[:remaining])
                             if len(body) >= cfg.max_page_bytes:
                                 truncated = True
                                 break

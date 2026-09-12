@@ -112,13 +112,15 @@ def validate_args(schema: dict[str, Any], args: dict[str, Any]) -> dict[str, Any
     if not isinstance(args, dict):
         raise ToolValidationError("arguments must be a JSON object")
     props: dict[str, Any] = schema.get("properties", {})
-    missing = [k for k in schema.get("required", []) if args.get(k) is None]
+    missing = [k for k in schema.get("required", []) if k not in args]
     if missing:
         raise ToolValidationError(f"missing required arguments: {', '.join(missing)}")
     clean: dict[str, Any] = {}
     for key, value in args.items():
-        if key not in props or value is None:
+        if key not in props:
             continue
+        if value is None:
+            raise ToolValidationError(f"argument '{key}': null is not allowed")
         spec = props[key]
         expected = spec.get("type")
         if expected in _TYPES:

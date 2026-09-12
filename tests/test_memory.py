@@ -26,5 +26,6 @@ def test_index_text_truncates(tmp_path):
         store.set(f"block{i}", "description text here", f"value{i}")
     text = store.index_text()
     assert "use memory_list" in text
-    assert "value0" in text
+    assert "block0 (global)" in text
+    assert "value0" not in text
     assert "value9" not in text

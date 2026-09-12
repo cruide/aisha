@@ -180,8 +180,8 @@ async def run_process(
 class RunCommandTool(Tool):
     name = "run_command"
     description = (
-        "Run one non-interactive command and return stdout, stderr and exit_code. "
-        "Example: run_command(command=\"pytest\")."
+        "Run one non-interactive PowerShell or cmd command. Returns exit_code, stdout and stderr. "
+        "Use cwd to choose the working directory; commands may require confirmation."
     )
     parameters = {
         "type": "object",

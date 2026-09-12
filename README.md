@@ -7,14 +7,14 @@ A local console AI agent in Python 3.11+. Works with an external
 OpenAI-compatible REST API. This is **not a web app**: the entire logic is a loop
 of "model request → tool calls → results → model again" in a single process.
 
-Version: `0.2.12`.
+Version: `0.2.13`.
 
 [![Aisha interface](aisha.jpg)](aisha.jpg)
 
 ## Features
 
 - **Files** — read, write, inline editing, listing, `glob` search, and `grep`;
-- **Shell** — run commands (`powershell`/`cmd`/`sh`), timeouts, output trimming, confirmation for dangerous commands;
+- **Shell** — run commands (`powershell`/`cmd` on Windows; `/bin/sh` on other OSes), timeouts, output trimming, confirmation for dangerous commands;
 - **Web** — DuckDuckGo search and page fetching with SSRF protection;
 - **Memory** — persistent blocks (global and project-scoped) with project priority;
 - **Skills** — reusable instructions in `SKILL.md`;
@@ -228,12 +228,7 @@ unless the corresponding `allow_*_outside_workspace` is enabled.
 
 ## Custom System Prompt (SYSTEM.md)
 
-If a file `<workspace>/.aisha/SYSTEM.md` exists in the project root, its content
-**replaces** the built-in aisha system prompt (persona, environment, rules).
-A compact index of the available memory blocks and skills is still appended after it
-(only when at least one block/skill exists). The "Tool Guide" (`tool_guide = true`),
-`AGENTS.md`, and the current todo list are also appended. `AGENTS.md`/`SYSTEM.md` are
-truncated to `context.agents_md_max_chars` (default 65536, 64 KB).
+If `<workspace>/.aisha/SYSTEM.md` exists, it is appended as untrusted project data and cannot replace or override the built-in policy. The memory/skills indexes, `AGENTS.md`, todo list, and optional Tool Guide are then added. `AGENTS.md` and `SYSTEM.md` support UTF-8 BOM and are limited by the configured and adaptive context limits.
 
 ## REPL
 
@@ -293,7 +288,7 @@ src/aisha/
 ├── memory.py     # persistent memory (blocks)
 ├── skills.py     # skills (SKILL.md)
 ├── ui.py         # ConsoleUI: rich + prompt_toolkit, REPL
-├── logger.py     # DebugLogger: LLM/tool traces to <workspace>/logs/ (--debug)
+├── logger.py     # DebugLogger: LLM/tool traces to <workspace>/.aisha/logs/ (--debug)
 ├── fsutil.py     # atomic write, path checks, human_size
 ├── errors.py     # exception hierarchy
 └── tools/        # tool implementations (base, files, shell, web, extras)

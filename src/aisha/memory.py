@@ -67,7 +67,11 @@ class MemoryStore:
                 sig.append(None)
                 continue
             try:
-                sig.append(directory.stat().st_mtime)
+                sig.append(tuple(
+                    (p.name, p.stat().st_size, p.stat().st_mtime_ns)
+                    for p in sorted(directory.glob("*.json"))
+                    if p.is_file()
+                ))
             except OSError:
                 sig.append(None)
         return tuple(sig)
@@ -143,17 +147,15 @@ class MemoryStore:
             return ""
 
         lines = [
-            f"- {b.description or ''}: \n{b.value};" for b in blocks
+            f"- {b.label} ({b.scope}) — {b.description or 'no description'}"
+            for b in blocks
         ]
-        
-        # lines = [
-        #     f"- {b.label} ({b.scope}) — {b.description or 'no description'}" for b in blocks
-        # ]
 
         text = "\n".join(lines)
 
         if len(text) <= self.index_max_chars:
             return text
+
         # Truncate and add a hint.
         remaining = len(lines)
         result: list[str] = []

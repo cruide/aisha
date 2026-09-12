@@ -25,7 +25,7 @@ def _log_filename() -> str:
 class DebugLogger:
     """Writes structured debug logs for LLM interactions to a file.
 
-    Log file is created in ``<workspace>/logs/`` with the naming pattern
+    Log file is created in ``<workspace>/.aisha/logs/`` with the naming pattern
     ``aisha_YYYY_MM_DD_<6-char-hex>.log``.  All methods are no-ops when
     the logger has not been started (i.e. debug mode is off).
     """
@@ -44,7 +44,7 @@ class DebugLogger:
 
         Returns the resolved log file path.
         """
-        log_dir = workspace / "logs"
+        log_dir = workspace / ".aisha" / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
         self._path = log_dir / _log_filename()
 

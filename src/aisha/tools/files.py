@@ -353,8 +353,9 @@ class ReadFileTool(Tool):
     name = "read_file"
     read_only = True
     description = (
-        "Read UTF-8 file lines. path is workspace-relative; offset=0 and limit=300 by default. "
-        "Example: read_file(path=\"src/main.py\", offset=0, limit=100)."
+        "Read a UTF-8 text file. Use offset (0-based line) and limit for a window; "
+        "the result includes the exact content, so copy edit_file.old_text from it. "
+        "If truncated or incomplete, read the needed window again."
     )
     parameters = {
         "type": "object",
@@ -411,8 +412,8 @@ class ReadFileTool(Tool):
 class WriteFileTool(Tool):
     name = "write_file"
     description = (
-        "Create or fully overwrite a file atomically. create_dirs defaults to true. "
-        "Example: write_file(path=\"notes.txt\", content=\"Hello\\n\")."
+        "Create or fully overwrite a UTF-8 text file atomically; this replaces all existing content. "
+        "Use edit_file for a small change. Parent directories are created by default."
     )
     parameters = {
         "type": "object",
@@ -452,14 +453,9 @@ class WriteFileTool(Tool):
 class EditFileTool(Tool):
     name = "edit_file"
     description = (
-        "Edit an existing text file by replacing one exact fragment. "
-        "First read_file the file and copy old_text verbatim, including indentation; "
-        "never add line-number prefixes, code fences or manual escaping. "
-        "old_text must match exactly once (default expected_replacements=1), so include "
-        "a few surrounding lines when the fragment is ambiguous. "
-        "If it reports 'not found', read_file again and copy the current text. "
-        "Example: edit_file(path=\"src/app.py\", old_text=\"    return 1\", "
-        "new_text=\"    return 2\")."
+        "Replace an exact fragment in an existing text file. First read the target region and copy "
+        "old_text verbatim from the latest read_file.content: preserve spaces, indentation and newlines; "
+        "do not add line numbers or code fences. Use a unique fragment. If not found, read again before retrying."
     )
     parameters = {
         "type": "object",
@@ -522,7 +518,7 @@ class ListDirTool(Tool):
     name = "list_dir"
     read_only = True
     description = (
-        "List directory entries. path defaults to \".\". Example: list_dir(path=\"src\")."
+        "List files and directories in a path. Use show_hidden for dotfiles and limit to cap results."
     )
     parameters = {
         "type": "object",
@@ -566,8 +562,8 @@ class GlobTool(Tool):
     name = "glob"
     read_only = True
     description = (
-        "Find file paths by glob pattern. path defaults to \".\". "
-        "Example: glob(pattern=\"src/**/*.py\")."
+        "Find file paths matching a glob pattern. Use path as the search base; patterns support *, **, ?, "
+        "and [...]. Results exclude common generated/hidden directories unless include_ignored is true."
     )
     parameters = {
         "type": "object",
@@ -608,9 +604,8 @@ class GrepTool(Tool):
     name = "grep"
     read_only = True
     description = (
-        "Search file contents using a Python regular expression. "
-        "path defaults to \".\"; limit defaults to 100. "
-        "Example: grep(pattern=\"def foo\", include=\"*.py\", path=\"src\")."
+        "Search file contents with a Python regular expression. Use include to filter filenames and path "
+        "to select a file or directory; set ignore_case when needed. Results contain file, line and text."
     )
     parameters = {
         "type": "object",

@@ -18,8 +18,8 @@ class TodoWriteTool(Tool):
     name = "todowrite"
     read_only = True
     description = (
-        "Replace the current task list. Use only for tasks with at least three steps. "
-        "Example: todowrite(todos=[{text: 'write tests', status: 'pending'}])."
+        "Replace the entire current task list. Use for work with at least three steps; keep one item in_progress "
+        "and mark completed or cancelled items explicitly."
     )
     parameters = {
         "type": "object",
@@ -60,7 +60,8 @@ class AskUserTool(Tool):
     read_only = True
     interactive_only = True
     description = (
-        "Show a clarification question and wait for the user."
+        "Ask the user for a decision or missing information and wait for the answer. "
+        "Provide options for a choice; allow_free_text defaults to true. Interactive mode only."
     )
     parameters = {
         "type": "object",
@@ -89,7 +90,10 @@ def _store(ctx: ToolContext):
 class MemoryListTool(Tool):
     name = "memory_list"
     read_only = True
-    description = "List persistent memory blocks with descriptions. No arguments required."
+    description = (
+        "List memory labels, descriptions and scopes, not contents. No arguments. "
+        "Use memory_get to read a block; project blocks shadow global blocks with the same label."
+    )
     parameters = {"type": "object", "properties": {}}
 
     async def run(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
@@ -104,7 +108,10 @@ class MemoryGetTool(Tool):
     name = "memory_get"
     read_only = True
     silent = True
-    description = "Read the contents of a memory block. Required argument: label — block name."
+    description = (
+        "Read a persistent memory block by its exact label from the memory index. "
+        "Returns value, description and scope; read before updating existing facts."
+    )
     parameters = {"type": "object", "properties": {"label": {"type": "string"}},
                   "required": ["label"]}
 
@@ -124,9 +131,8 @@ class MemoryGetTool(Tool):
 class MemorySetTool(Tool):
     name = "memory_set"
     description = (
-        "Create or fully overwrite a memory block. Required arguments: label (name), "
-        "description (brief purpose) and value (contents). scope: global (user preferences) "
-        "or project (current project rules). Save only durable facts, do not store secrets."
+        "Create or fully overwrite durable memory. Use global for user preferences and project for this workspace. "
+        "Do not store secrets; keep the description brief and the value focused."
     )
     parameters = {
         "type": "object",
@@ -151,8 +157,8 @@ class MemorySetTool(Tool):
 class MemoryReplaceTool(Tool):
     name = "memory_replace"
     description = (
-        "Exact text replacement inside a memory block. Required arguments: label (block name), "
-        "old_text (exact fragment to replace) and new_text (replacement text)."
+        "Replace exact text in an existing memory block. First memory_get the current value and copy old_text "
+        "verbatim; use a unique fragment and expected_replacements when needed."
     )
     parameters = {
         "type": "object",
@@ -177,7 +183,10 @@ class MemoryReplaceTool(Tool):
 class SkillTool(Tool):
     name = "skill"
     read_only = True
-    description = "Load a skill's full text by name from the index. Required argument: name."
+    description = (
+        "Load task-specific instructions using an exact name from the skills index, not a file path. "
+        "Load a relevant skill before working; unchanged skills are only returned once per session."
+    )
     parameters = {"type": "object", "properties": {"name": {"type": "string"}},
                   "required": ["name"]}
 

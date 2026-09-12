@@ -234,9 +234,13 @@ class AgentLoop:
         # tool schemas (estimate_sent_tokens adds tools_chars). Reserve a safety
         # margin for the chat-template special tokens and estimate error, otherwise
         # max_tokens overshoots and the server truncates tool-call JSON mid-stream.
-        overhead = max(512, est_in // 20)
+        overhead = max(0, est_in // 20)
         remaining = int(llm.context_window) - est_in - overhead
-        max_tokens = max(256, min(llm.max_output_tokens, remaining))
+        if remaining < 1:
+            raise ContextOverflowError(
+                "No context remains for model output after overhead; compact the conversation."
+            )
+        max_tokens = min(llm.max_output_tokens, remaining)
         if self.config.ui.debug:
             self.events.on_debug("→ model", self._format_request(messages, est_in))
         if debug_logger.path:
@@ -477,6 +481,11 @@ class AgentLoop:
         # (overflow-recovery) compaction also trims user messages if needed.
         self._trim_keep_block(keep, budget_chars=keep_budget, aggressive=force)
         self.context.replace_history(summary, keep)
+        # Trimming mutates message dictionaries in place, so refresh the cached
+        # character count before the next compaction decision.
+        self.context._messages_chars = sum(
+            self.context._chars(message) for message in self.context.messages
+        )
         self.events.on_notice(f"History compacted: {len(old)} messages → summary.")
         return True
 
