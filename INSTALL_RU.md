@@ -1,5 +1,7 @@
 # Установка агента aisha
 
+> [English version](INSTALL.md)
+
 `aisha` — локальный консольный AI-агент на Python 3.11+. Он работает с внешним `llama-server` (llama.cpp) через OpenAI-совместимый API и не требует облачных LLM или API-ключей.
 
 ## 1. Требования
@@ -23,8 +25,8 @@ python --version
 
 ### Вариант 1: из PyPI (рекомендуется)
 
-```bash
-pip install aisha
+```powershell
+python -m pip install aisha
 ```
 
 Самый простой способ: пакет устанавливается с https://pypi.org/project/aisha/ вместе со всеми зависимостями, команда `aisha` доступна глобально.
@@ -33,8 +35,9 @@ pip install aisha
 
 Склонируйте или скопируйте репозиторий в рабочую директорию, затем из корня проекта:
 
-```bash
-pip install -e ".[dev]"
+```powershell
+python -m pip install .             # обычная установка
+python -m pip install -e ".[dev]"  # editable-установка для разработки
 ```
 
 `-e` (editable) устанавливает агент в режиме разработки: изменения в `src/` сразу подхватываются, а команда `aisha` доступна глобально. Dev-зависимости (pytest, ruff) ставятся вместе.
@@ -75,7 +78,6 @@ z:\llamacpp\cuda\llama-server.exe `
   --no-mmproj `
   --jinja `
   --chat-template-file "d:\models\llama\qwen\chat_template.jinja" `
-  --tools all `
   -c 65536 `
   -fa on `
   --fit off `
@@ -98,9 +100,13 @@ z:\llamacpp\cuda\llama-server.exe `
 | --- | --- | --- |
 | `--host localhost` | локальный доступ | безопаснее, чем `0.0.0.0` |
 | `--port 8088` | порт агента по умолчанию | совпадает с дефолтом в конфиге |
-| `--tools all` | tool calling | нативный OpenAI-style tool calling |
 | `-a Qwen3.5-9B-Q4_K_XL` | alias модели | только подсказка для агента |
-| `-c 65536` | контекст | должен совпадать с `context_window` в конфиге |
+| `-c 65536` | контекст | серверный контекст, публикуемый как `meta.n_ctx` |
+
+Модель и chat template должны поддерживать OpenAI-style function calling. Aisha сама
+передаёт схемы и исполняет вызовы, поэтому встроенный режим llama-server `--tools all` не
+нужен. Его включение создаёт второй канал исполнения вне проверок workspace, read-only и
+подтверждений Aisha.
 
 > Безопасность: не публикуйте `llama-server` в интернет. Без reverse proxy, аутентификации и ограничения доступа он должен слушать только `localhost`.
 
@@ -133,11 +139,11 @@ request_timeout = 600
 
 [llm]
 temperature = 0.6
-max_output_tokens = 65536
-context_window = 65536     # ручная настройка: должно совпадать с -c llama-server; дефолт 32768
+max_output_tokens = 32768  # fallback, если сервер не публикует meta.n_ctx
+context_window = 32768     # fallback, если сервер не публикует meta.n_ctx
 context_soft_limit = 0.75
 max_tool_iterations = 25
-enable_thinking = null          # true/false — управление thinking для Qwen; null = серверное умолчание
+# enable_thinking = true        # true/false; не указывайте ключ для серверного значения
 compact_tool_schemas = false    # true — вырезать блоки «Example:» из описаний инструментов
 
 [tools]
@@ -186,9 +192,18 @@ debug = false
 
 > Имя модели в конфиге — только подсказка. Если объявленное имя не совпадает с `-a` на сервере, `aisha` автоматически подключается к первой доступной модели и не падает.
 
+При обычном старте Aisha читает положительный `meta.n_ctx` выбранной модели из
+`/v1/models` и присваивает его одновременно `llm.context_window` и
+`llm.max_output_tokens`. Значения конфига служат fallback. Фактический `max_tokens` запроса
+дополнительно ограничивается остатком контекста после промптов, истории, схем и запаса.
+
 ### Проектная конфигурация
 
-Файл `<workspace>/.aisha/aisha.toml` переопределяет глобальные настройки для конкретного проекта. Он **не может ослабить безопасность**: `permission = "auto"`, чтение/запись за пределами workspace и т.п. приводят к ошибке конфигурации.
+Файл `<workspace>/.aisha/aisha.toml` переопределяет глобальные настройки проекта. Отдельные
+проверки запрещают ему задавать `permission = "auto"`, включать файловый доступ вне
+workspace или повторно включать глобально отключённый shell. Остальные настройки, включая
+серверные и web, проект может менять. Не храните API-ключи в проектном конфиге: используйте
+`AISHA_API_KEY` или глобальный конфиг вне workspace.
 
 ### Приоритет настроек
 
@@ -237,7 +252,7 @@ aisha --server http://localhost:8088   # другой llama-server
 aisha --model Qwen3.5-9B-Q4_K_XL       # переопределение модели
 aisha -r                               # режим только для чтения
 aisha --permission deny                # запрет shell-команд
-aisha --permission auto                # выполнять разрешённые команды без подтверждения
+aisha --permission auto                # без prompt только для нераспознанных как опасные команд
 aisha --shell cmd                      # cmd вместо PowerShell
 aisha --tools-only                     # список доступных инструментов
 ```
@@ -246,14 +261,15 @@ aisha --tools-only                     # список доступных инс�
 
 Из PyPI:
 
-```bash
-pip install --upgrade aisha
+```powershell
+python -m pip install --upgrade aisha
 ```
 
 Из репозитория (editable):
 
-```bash
-pip install -e ".[dev]" --upgrade
+```powershell
+git pull --ff-only
+python -m pip install --upgrade -e ".[dev]"
 ```
 
 Для pipx:
@@ -266,11 +282,11 @@ pipx upgrade aisha
 
 | Симптом | Решение |
 | --- | --- |
-| `ServerUnavailableError` при старте REPL | `llama-server` не запущен или недоступен. Проверьте `http://localhost:8088/health`. |
+| `ServerUnavailableError` при старте REPL | Для llama-server проверьте `/health` и `/v1/models`. Для серверов без совместимого `/health` используйте `--skip-health`. |
 | Модель ещё загружается | Подождите, пока `llama-server` не загрузит GGUF, затем повторите `aisha --doctor`. |
-| Ошибка конфигурации из `aisha.toml` | Проектный конфиг не может ослаблять безопасность — переместите такие настройки в глобальный `config.toml` или передайте флагом CLI. |
+| Ошибка проектного `aisha.toml` | Перенесите запрещённые shell/outside-workspace настройки в глобальный конфиг или явный CLI-флаг. |
 | Команда `aisha` не найдена | Переустановите пакет (`pip install -e .`) или проверьте, что каталог Scripts Python в PATH. |
-| `permission = "ask"` мешает | Запустите с `--permission auto` или задайте `AISHA_PERMISSION=auto`. |
+| `permission = "ask"` мешает | `--permission auto` убирает prompt для команд, не распознанных как опасные; regex-проверка не является песочницей. |
 
 ## 10. Тестирование и проверка кода (разработка)
 

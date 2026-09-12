@@ -1,6 +1,6 @@
 # Installing the aisha Agent
 
-> 🇷🇺 [Русская версия](INSTALL_RU.md)
+> [Russian version](INSTALL_RU.md)
 
 `aisha` — a local console AI agent in Python 3.11+. Works with an external `llama-server` (llama.cpp) via an OpenAI-compatible API and does not require cloud LLMs or API keys.
 
@@ -25,8 +25,8 @@ You need `Python 3.11` or newer. If Python is missing — install it from https:
 
 ### Option 1: from PyPI (recommended)
 
-```bash
-pip install aisha
+```powershell
+python -m pip install aisha
 ```
 
 The simplest way: the package is installed from https://pypi.org/project/aisha/ with all dependencies, the `aisha` command is available globally.
@@ -35,8 +35,9 @@ The simplest way: the package is installed from https://pypi.org/project/aisha/ 
 
 Clone or copy the repository to your working directory, then from the project root:
 
-```bash
-pip install -e ".[dev]"
+```powershell
+python -m pip install .             # regular installation
+python -m pip install -e ".[dev]"  # editable development installation
 ```
 
 `-e` (editable) installs the agent in development mode: changes in `src/` are picked up immediately, and the `aisha` command is available globally. Dev dependencies (pytest, ruff) are installed as well.
@@ -77,7 +78,6 @@ z:\llamacpp\cuda\llama-server.exe `
   --no-mmproj `
   --jinja `
   --chat-template-file "d:\models\llama\qwen\chat_template.jinja" `
-  --tools all `
   -c 65536 `
   -fa on `
   --fit off `
@@ -100,9 +100,13 @@ Key parameters for working with `aisha`:
 | --- | --- | --- |
 | `--host localhost` | local access | safer than `0.0.0.0` |
 | `--port 8088` | default agent port | matches the default in config |
-| `--tools all` | tool calling | native OpenAI-style tool calling |
 | `-a Qwen3.5-9B-Q4_K_XL` | model alias | just a hint for the agent |
-| `-c 65536` | context | must match `context_window` in config |
+| `-c 65536` | context | server-side context advertised as `meta.n_ctx` |
+
+The model and chat template must support OpenAI-style function calling. Aisha sends its own
+tool schemas and executes calls itself, so llama-server's built-in `--tools all` is not
+required. Enabling it would create a second execution path outside Aisha's workspace,
+read-only, and confirmation checks.
 
 > Security: do not expose `llama-server` to the internet. Without a reverse proxy, authentication, and access restrictions, it should only listen on `localhost`.
 
@@ -135,11 +139,11 @@ request_timeout = 600
 
 [llm]
 temperature = 0.6
-max_output_tokens = 65536
-context_window = 65536     # manual override: match llama-server -c; default is 32768
+max_output_tokens = 32768  # fallback when the server does not publish meta.n_ctx
+context_window = 32768     # fallback when the server does not publish meta.n_ctx
 context_soft_limit = 0.75
 max_tool_iterations = 25
-enable_thinking = null          # true/false — control Qwen-style thinking; null = server default
+# enable_thinking = true        # true/false; omit the key for the server default
 compact_tool_schemas = false    # true — strip "Example:" blocks from tool descriptions
 
 [tools]
@@ -188,9 +192,18 @@ debug = false
 
 > The model name in config is just a hint. If the declared name doesn't match `-a` on the server, `aisha` automatically connects to the first available model without crashing.
 
+At normal startup Aisha reads a positive `meta.n_ctx` for the selected model from
+`/v1/models` and assigns it to both `llm.context_window` and `llm.max_output_tokens`.
+Configured values are fallbacks only. The actual per-request `max_tokens` is further limited
+by the remaining context after prompts, history, tool schemas, and a safety margin.
+
 ### Project configuration
 
-File `<workspace>/.aisha/aisha.toml` overrides global settings for a specific project. It **cannot weaken security**: `permission = "auto"`, read/write outside the workspace, etc. will cause a configuration error.
+File `<workspace>/.aisha/aisha.toml` overrides global settings for a specific project. Special
+checks prevent it from setting `permission = "auto"`, enabling outside-workspace file access,
+or re-enabling shell when it was disabled globally. Other settings, including server and web
+settings, remain project-overridable. Do not store API keys in project config; prefer
+`AISHA_API_KEY` or the global config outside the workspace.
 
 ### Settings priority
 
@@ -239,7 +252,7 @@ aisha --server http://localhost:8088   # different llama-server
 aisha --model Qwen3.5-9B-Q4_K_XL       # override model
 aisha -r                               # read-only mode
 aisha --permission deny                # deny shell commands
-aisha --permission auto                # run allowed commands without confirmation
+aisha --permission auto                # skip prompts only for commands not flagged as dangerous
 aisha --shell cmd                      # cmd instead of PowerShell
 aisha --tools-only                     # list available tools
 ```
@@ -248,14 +261,15 @@ aisha --tools-only                     # list available tools
 
 From PyPI:
 
-```bash
-pip install --upgrade aisha
+```powershell
+python -m pip install --upgrade aisha
 ```
 
 From repository (editable):
 
-```bash
-pip install -e ".[dev]" --upgrade
+```powershell
+git pull --ff-only
+python -m pip install --upgrade -e ".[dev]"
 ```
 
 For pipx:
@@ -268,11 +282,11 @@ pipx upgrade aisha
 
 | Symptom | Solution |
 | --- | --- |
-| `ServerUnavailableError` at REPL start | `llama-server` is not running or unavailable. Check `http://localhost:8088/health`. |
+| `ServerUnavailableError` at REPL start | Check `/health` for llama-server and `/v1/models`. For servers without compatible `/health`, use `--skip-health`. |
 | Model is still loading | Wait until `llama-server` loads the GGUF, then repeat `aisha --doctor`. |
-| Configuration error from `aisha.toml` | Project config cannot weaken security — move such settings to the global `config.toml` or pass them as CLI flags. |
+| Configuration error from project `aisha.toml` | Move restricted shell/outside-workspace settings to global config or an explicit CLI flag. |
 | `aisha` command not found | Reinstall the package (`pip install -e .`) or check that the Python Scripts directory is in PATH. |
-| `permission = "ask"` is annoying | Run with `--permission auto` or set `AISHA_PERMISSION=auto`. |
+| `permission = "ask"` is annoying | `--permission auto` skips prompts for commands not recognized as dangerous; the regex check is not a sandbox. |
 
 ## 10. Testing and code review (development)
 

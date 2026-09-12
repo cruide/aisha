@@ -361,8 +361,10 @@ class ReadFileTool(Tool):
         "type": "object",
         "properties": {
             "path": {"type": "string", "description": "File path (relative to workspace)"},
-            "offset": {"type": "integer", "description": "First line, 0-based"},
-            "limit": {"type": "integer", "description": "Max lines to return"},
+            "offset": {"type": "integer", "minimum": 0,
+                       "description": "First line, 0-based"},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 10000,
+                      "description": "Max lines to return"},
         },
         "required": ["path"],
     }
@@ -412,7 +414,8 @@ class ReadFileTool(Tool):
 class WriteFileTool(Tool):
     name = "write_file"
     description = (
-        "Create or fully overwrite a UTF-8 text file atomically; this replaces all existing content. "
+        "Create or fully overwrite a UTF-8 text file atomically; this replaces all "
+        "existing content. "
         "Use edit_file for a small change. Parent directories are created by default."
     )
     parameters = {
@@ -454,8 +457,9 @@ class EditFileTool(Tool):
     name = "edit_file"
     description = (
         "Replace an exact fragment in an existing text file. First read the target region and copy "
-        "old_text verbatim from the latest read_file.content: preserve spaces, indentation and newlines; "
-        "do not add line numbers or code fences. Use a unique fragment. If not found, read again before retrying."
+        "old_text verbatim from the latest read_file.content: preserve spaces, indentation "
+        "and newlines; do not add line numbers or code fences. Use a unique fragment. "
+        "If not found, read again before retrying."
     )
     parameters = {
         "type": "object",
@@ -466,7 +470,7 @@ class EditFileTool(Tool):
                                         "(exact whitespace/indentation, no line numbers)"},
             "new_text": {"type": "string",
                          "description": "Replacement text; keep the original indentation"},
-            "expected_replacements": {"type": "integer",
+            "expected_replacements": {"type": "integer", "minimum": 1,
                                       "description": "Exact number of occurrences to "
                                                      "replace (default 1)"},
         },
@@ -518,14 +522,15 @@ class ListDirTool(Tool):
     name = "list_dir"
     read_only = True
     description = (
-        "List files and directories in a path. Use show_hidden for dotfiles and limit to cap results."
+        "List files and directories in a path. Use show_hidden for dotfiles and limit "
+        "to cap results."
     )
     parameters = {
         "type": "object",
         "properties": {
             "path": {"type": "string", "description": "Directory, default '.'"},
             "show_hidden": {"type": "boolean"},
-            "limit": {"type": "integer"},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 10000},
         },
     }
 
@@ -562,15 +567,16 @@ class GlobTool(Tool):
     name = "glob"
     read_only = True
     description = (
-        "Find file paths matching a glob pattern. Use path as the search base; patterns support *, **, ?, "
-        "and [...]. Results exclude common generated/hidden directories unless include_ignored is true."
+        "Find file paths matching a glob pattern. Use path as the search base; patterns "
+        "support *, **, ?, and [...]. Results exclude common generated/hidden directories "
+        "unless include_ignored is true."
     )
     parameters = {
         "type": "object",
         "properties": {
             "pattern": {"type": "string"},
             "path": {"type": "string", "description": "Search base, default '.'"},
-            "limit": {"type": "integer"},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 10000},
             "include_ignored": {"type": "boolean",
                                 "description": "Do not exclude .git, node_modules, vendor, etc."},
         },
@@ -604,8 +610,9 @@ class GrepTool(Tool):
     name = "grep"
     read_only = True
     description = (
-        "Search file contents with a Python regular expression. Use include to filter filenames and path "
-        "to select a file or directory; set ignore_case when needed. Results contain file, line and text."
+        "Search file contents with a Python regular expression. Use include to filter "
+        "filenames and path to select a file or directory; set ignore_case when needed. "
+        "Results contain file, line and text."
     )
     parameters = {
         "type": "object",
@@ -614,7 +621,8 @@ class GrepTool(Tool):
             "path": {"type": "string", "description": "File or directory, default '.'"},
             "include": {"type": "string", "description": "File glob, e.g. '*.py'"},
             "ignore_case": {"type": "boolean"},
-            "limit": {"type": "integer", "description": "Max matches (default 100)"},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 10000,
+                      "description": "Max matches (default 100)"},
             "include_ignored": {"type": "boolean"},
         },
         "required": ["pattern"],

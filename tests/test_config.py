@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from aisha.config import load_config
+from aisha.config import _load_toml, load_config
 from aisha.errors import ConfigurationError
 
 
@@ -221,4 +221,22 @@ def test_skip_health_must_be_bool(tmp_path: Path, monkeypatch):
     _write_project_config(ws, '[server]\nskip_health = "yes"\n')
     with pytest.raises(ConfigurationError, match="skip_health"):
         load_config(ws, env={})
+
+
+@pytest.mark.parametrize(("error", "message"), [
+    (FileNotFoundError(), "file not found"),
+    (PermissionError(), "permission denied"),
+    (IsADirectoryError(), "is a directory"),
+    (OSError("disk failure"), "I/O error"),
+])
+def test_load_toml_reports_specific_io_errors(tmp_path: Path, monkeypatch, error, message):
+    path = tmp_path / "config.toml"
+
+    def fail_open(*args, **kwargs):
+        raise error
+
+    monkeypatch.setattr(Path, "open", fail_open)
+    with pytest.raises(ConfigurationError, match=message) as caught:
+        _load_toml(path)
+    assert caught.value.__cause__ is error
 

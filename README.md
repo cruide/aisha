@@ -1,13 +1,13 @@
 # AISHA
 
-> 🇷🇺 [Русская версия](README_RU.md)
+> [Russian version](README_RU.md)
 
 A local console AI agent in Python 3.11+. Works with an external
 [llama-server](https://github.com/ggml-org/llama.cpp) (llama.cpp) via an
 OpenAI-compatible REST API. This is **not a web app**: the entire logic is a loop
 of "model request → tool calls → results → model again" in a single process.
 
-Version: `0.2.13`.
+Version: `0.2.14`.
 
 [![Aisha interface](aisha.jpg)](aisha.jpg)
 
@@ -30,16 +30,17 @@ Version: `0.2.13`.
 
 ### Option 1: from PyPI (recommended)
 
-```bash
-pip install aisha
+```powershell
+python -m pip install aisha
 ```
 
 The simplest way: the package is installed from https://pypi.org/project/aisha/ with all dependencies, the `aisha` command is available globally.
 
 ### Option 2: from source (repository)
 
-```bash
-pip install -e ".[dev]"   # src-layout: without this the `aisha` package won't import
+```powershell
+python -m pip install .             # regular installation
+python -m pip install -e ".[dev]"  # editable development installation
 ```
 
 Entry point — `aisha = "aisha.cli:main"` (see `pyproject.toml`).
@@ -54,6 +55,11 @@ llama-server \
   --port 8088 \
   --n-gpu-layers 99
 ```
+
+The model and chat template must support OpenAI-style function calling. Aisha sends and
+executes its own tool schemas; llama-server's built-in `--tools all` is not required and
+would create a separate execution path outside Aisha's permission checks. Verify the
+template with `aisha --doctor --tool-call-test`.
 
 By default aisha expects the server at `http://localhost:8088`. Check connectivity:
 
@@ -113,7 +119,7 @@ request_timeout = 600.0
 
 [llm]
 temperature = 0.6
-top_p = 0.9                 # optional; None = don't pass (server default used)
+top_p = 0.9                 # optional; omit the key to use the server default
 top_k = 40                  # optional; integer > 0
 repeat_penalty = 1.1        # optional; > 0
 frequency_penalty = 0.0     # optional; -2.0 .. 2.0
@@ -123,9 +129,9 @@ context_soft_limit = 0.75
 max_tool_iterations = 25
 tool_guide = false           # true — add "Tool Guide" to system prompt (for weak models)
 communication_language = "Russian"  # agent's response language
-enable_thinking = null          # true/false — control Qwen-style thinking per request;
-                                # null = server default. When true: thinking is enabled for
-                                # final answers and disabled for tool-calling turns.
+# enable_thinking = true        # true/false — control Qwen-style thinking per request;
+                                # omit the key to use the server default. Thinking is disabled
+                                # whenever tool schemas are included and during summarization.
 compact_tool_schemas = false    # true — strip "Example:" blocks from tool descriptions
 
 [tools]
@@ -157,19 +163,19 @@ index_max_chars = 20000     # truncation limit for the skills index in the syste
 agents_md_max_chars = 65536 # truncation limit for AGENTS.md and SYSTEM.md
 
 [compaction]
-summary_max_tokens = 4096   # max tokens for the history-summary request
-trim_user_messages = false  # also trim user messages / tool-call args in the keep block
+summary_max_tokens = 4096   # requested summary budget; effective minimum is 256 tokens
+trim_user_messages = false  # allow trimming user messages as a last resort
 elide_large_tool_args = false  # replace large applied tool args with a preview
 elide_threshold_chars = 4000
 trim_head_chars = 2000      # head chars kept when trimming oversized tool results
 trim_tail_chars = 1000      # tail chars kept when trimming
-trim_block_fraction = 0.25  # keep block must fit this fraction of context_window
+trim_block_fraction = 0.25  # fallback for internal trims without an explicit budget
 
 [ui]
 theme = "dark"
 stream = true
 show_reasoning = false
-debug = false                 # true — same as --debug: reasoning + request/response dumps
+debug = false                 # console reasoning and compact request/response diagnostics
 input_history = "~/.aisha/input_history.txt"
 ```
 
@@ -188,7 +194,7 @@ Environment variables:
 | `AISHA_COMMUNICATION_LANGUAGE` | `llm.communication_language` |
 
 Config is strictly validated: unknown section or key raises an error.
-**Project-level `aisha.toml` is restricted by security rules** — it cannot set
+**Project-level `aisha.toml` has specific shell and file-access restrictions** — it cannot set
 `permission = "auto"`, enable access outside the workspace, or enable `shell`
 if it was disabled globally. This protects against a "trojan" config in a cloned repo.
 
@@ -196,7 +202,7 @@ if it was disabled globally. This protects against a "trojan" config in a cloned
 
 | Tool | Read-only | Purpose |
 |---|---|---|
-| `read_file` | yes | read UTF-8 file with offset/limit |
+| `read_file` | yes | read text as UTF-8 (invalid bytes replaced), with offset/limit |
 | `write_file` | no | create/overwrite (atomic) |
 | `edit_file` | no | precise text fragment replacement |
 | `list_dir` | yes | directory listing |
@@ -206,13 +212,18 @@ if it was disabled globally. This protects against a "trojan" config in a cloned
 | `web_search` | yes | DuckDuckGo search |
 | `web_fetch` | yes | fetch web page |
 | `todowrite` | yes | full replacement of session todo list |
-| `ask_user` | yes | clarifying question (REPL only) |
+| `ask_user` | yes | clarifying question when stdin/stdout are interactive TTYs |
 | `memory_list` / `memory_get` | yes | list/read memory blocks |
 | `memory_set` / `memory_replace` | no | write/edit memory blocks |
 | `skill` | yes | load skill text by name |
 
 File tools do not escape the workspace (path traversal is blocked)
 unless the corresponding `allow_*_outside_workspace` is enabled.
+Enabling outside writes only makes the path eligible: every write still requires an
+interactive confirmation, so non-interactive outside writes are rejected. These path checks
+apply to file-tool arguments and command `cwd`, not to filesystem access performed by a
+spawned shell process; `run_command` is not sandboxed. `tools.permission` applies only to
+`run_command`; use `--read-only` to exclude file and memory write tools.
 `run_command` is registered only if `tools.shell` is enabled, `web_search` only if
 `tools.web_search` is enabled, memory tools only if `memory.enabled`;
 `ask_user` is excluded from schemas in non-interactive mode.
@@ -221,14 +232,37 @@ unless the corresponding `allow_*_outside_workspace` is enabled.
 
 - **Memory** — JSON blocks in `~/.aisha/memory/` (global) and `<workspace>/.aisha/memory/`
   (project-scoped). Project block overrides global with the same `label`.
+  `memory_set.scope` defaults to `global`; pass `project` for workspace-specific memory.
   `memory_get` call is not displayed in console (it's a background read of the agent's own memory).
 - **Skills** — directories `~/.aisha/skills/<name>/SKILL.md` and
   `<workspace>/.aisha/skills/<name>/SKILL.md` with required YAML frontmatter
-  (`name`, `description`).
+  (`name`, `description`). Lookup uses the frontmatter `name`; the directory may have a
+  different name. An unchanged skill body is returned only once per session.
 
 ## Custom System Prompt (SYSTEM.md)
 
-If `<workspace>/.aisha/SYSTEM.md` exists, it is appended as untrusted project data and cannot replace or override the built-in policy. The memory/skills indexes, `AGENTS.md`, todo list, and optional Tool Guide are then added. `AGENTS.md` and `SYSTEM.md` support UTF-8 BOM and are limited by the configured and adaptive context limits.
+The system prompt is assembled from the built-in policy and environment, optional Tool Guide,
+workspace `AGENTS.md`, `<workspace>/.aisha/SYSTEM.md`, current todos, and finally memory/skill
+indexes. `AGENTS.md` and `SYSTEM.md` are delimited as untrusted reference data and cannot
+override the built-in policy. Both support UTF-8 BOM and have independent configured and
+adaptive size limits.
+
+## Server Compatibility
+
+Required endpoints are `GET /v1/models` and streaming `POST /v1/chat/completions`, including
+OpenAI-style tool-call deltas when tools are used. `/health`, `/tokenize`, model `meta.n_ctx`,
+usage in stream options, `reasoning_content`, and Qwen's `chat_template_kwargs` are optional
+extensions with fallbacks. A positive `meta.n_ctx` overrides both configured context limits;
+the configured values are fallbacks for servers that do not publish it.
+
+Chat requests retry after 0.5, 1.0 and 2.0 seconds for connection errors and HTTP
+429/502/503/504, but only before any SSE data arrives. If a started stream is interrupted,
+the partial assistant text is saved without replaying the request; partial tool calls are not
+executed. On normal startup, an explicit 503 from `/health` triggers model discovery every
+four seconds for up to 120 seconds. `--doctor` performs one diagnostic pass and does not wait.
+
+`llm.max_output_tokens` is only an upper bound. Each request reserves the estimated system
+prompt, history, tool schemas, and a 5% safety margin, then uses the remaining context.
 
 ## REPL
 
@@ -254,13 +288,18 @@ Additionally: `Ctrl+C` cancels the current request (REPL does not exit),
 
 ## Security
 
-- Shell commands in `permission = "ask"` mode require confirmation;
-  dangerous commands (`rm -rf`, `Remove-Item -Recurse`, `git reset --hard`, etc.)
-  always require confirmation.
-- `web_fetch` blocks private/localhost/loopback addresses (SSRF protection) unless
-  `web.allow_private_hosts` is enabled.
+- Shell commands in `permission = "ask"` mode require confirmation. In `auto` mode,
+  commands recognized by the best-effort danger heuristic also require confirmation.
+- `web_fetch` permits only HTTP(S), revalidates every redirect, and blocks localhost, `.local`,
+  private, loopback, link-local, reserved, multicast, unspecified, mapped IPv6, unsafe 6to4,
+  and Teredo addresses. `allow_private_hosts=true` disables hostname/IP filtering; DNS
+  rebinding between validation and connection remains a known limitation.
 - `find_danger` in `shell.py` is a **heuristic regex check, not a sandbox**: it can be bypassed.
-  Do not run aisha as a privileged user in an untrusted environment.
+  Use `permission = "ask"` or `deny` for untrusted model output, and do not run aisha as
+  a privileged user in an untrusted environment.
+- `--debug` writes prompts, history, model output/reasoning, tool arguments, and up to 4000
+  characters of each tool result to `<workspace>/.aisha/logs/`; logs are not auto-deleted.
+  Do not enable it when those values may contain secrets.
 
 ## Development
 

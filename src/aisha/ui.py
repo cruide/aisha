@@ -258,7 +258,7 @@ class ConsoleUI:
             ("Messages", str(len(ctx.messages))),
             ("Tools", str(len(registry.names()))),
             ("AGENTS.md", "loaded" if ctx.agents_md else "none"),
-            ("SYSTEM.md", "replaces base prompt" if ctx.system_md else "none"),
+            ("SYSTEM.md", "loaded as untrusted project context" if ctx.system_md else "none"),
             ("Configs", ", ".join(cfg.sources) or "defaults"),
         ]
         for k, v in rows:

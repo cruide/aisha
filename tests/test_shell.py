@@ -1,5 +1,6 @@
 # Author: Tischenko A. (https://github.com/cruide)
 import os
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -8,6 +9,7 @@ from aisha.tools.shell import (
     _bounded_read,
     find_danger,
     normalize_timeout,
+    run_process,
     truncate_output,
 )
 
@@ -20,7 +22,7 @@ from aisha.tools.shell import (
     "composer require laravel/framework",
     "git checkout .", "git restore .", "git stash drop", "git stash clear",
     "iex (Get-Content ./x.ps1)", "powershell -enc aGVsbG8=",
-    "[Convert]::FromBase64String('aGVsbG8=')", "cmd /c dir",
+    "[Convert]::FromBase64String('aGVsbG8=')", "cmd /c dir", "cmd /k dir", "cmd.exe /r x.bat",
     "powershell -command Get-Process", "pwsh -c echo hi",
 ])
 def test_dangerous_detected(cmd):
@@ -89,3 +91,26 @@ async def test_ask_mode_without_confirm_fn_is_denied(ctx):
     ctx.config.tools.permission = "ask"
     with pytest.raises(ToolPermissionError):
         await RunCommandTool().run({"command": "echo hi"}, ctx)
+
+
+async def test_run_process_cleans_up_after_unexpected_error(monkeypatch):
+    class FakeProcess:
+        pid = 123
+        stdout = object()
+        stderr = object()
+        returncode = None
+
+    proc = FakeProcess()
+    monkeypatch.setattr(
+        "aisha.tools.shell.asyncio.create_subprocess_exec", AsyncMock(return_value=proc)
+    )
+    monkeypatch.setattr(
+        "aisha.tools.shell._bounded_read", AsyncMock(side_effect=RuntimeError("boom"))
+    )
+    kill = AsyncMock()
+    monkeypatch.setattr("aisha.tools.shell.kill_tree", kill)
+
+    with pytest.raises(RuntimeError, match="boom"):
+        await run_process(["fake"], ".", 10, 100)
+
+    kill.assert_awaited_once_with(proc)

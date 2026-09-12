@@ -1,10 +1,11 @@
 # Author: Tischenko A. (https://github.com/cruide)
-"""Debug logger: writes full LLM request/response and tool call traces to a log file."""
+"""Write logical LLM payloads, responses, and tool traces to a debug log."""
 
 from __future__ import annotations
 
 import json
 import logging
+import traceback
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -66,13 +67,20 @@ class DebugLogger:
         return self._path
 
     def close(self) -> None:
-        """Flush and close the log file."""
+        """Close every handler without allowing one failure to stop cleanup."""
         if self._logger is None:
             return
-        for handler in self._logger.handlers[:]:
-            handler.close()
-            self._logger.removeHandler(handler)
-        self._logger = None
+        logger = self._logger
+        try:
+            for handler in logger.handlers[:]:
+                try:
+                    handler.close()
+                except Exception:
+                    pass
+                finally:
+                    logger.removeHandler(handler)
+        finally:
+            self._logger = None
 
     def _log(self, text: str) -> None:
         if self._logger is not None:
@@ -163,6 +171,11 @@ class DebugLogger:
             self._log(json.dumps(obj, indent=2, ensure_ascii=False, default=str)[:4000])
         except (json.JSONDecodeError, TypeError):
             self._log(result_json[:4000])
+
+    def log_exception(self, exc: Exception, *, tool_name: str) -> None:
+        """Log a tool implementation failure with its full traceback."""
+        self._log(f"\n  ! TOOL EXCEPTION: {tool_name}")
+        self._log("".join(traceback.format_exception(exc)).rstrip())
 
 
 # Module-level singleton — initialised in cli.py when --debug is active.

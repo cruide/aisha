@@ -218,8 +218,14 @@ def _load_toml(path: Path) -> dict[str, Any]:
             return tomllib.load(fh)
     except tomllib.TOMLDecodeError as exc:
         raise ConfigurationError(f"{path}: TOML parse error: {exc}") from exc
+    except FileNotFoundError as exc:
+        raise ConfigurationError(f"{path}: file not found") from exc
+    except PermissionError as exc:
+        raise ConfigurationError(f"{path}: permission denied") from exc
+    except IsADirectoryError as exc:
+        raise ConfigurationError(f"{path}: is a directory, not a file") from exc
     except OSError as exc:
-        raise ConfigurationError(f"{path}: failed to read file: {exc}") from exc
+        raise ConfigurationError(f"{path}: I/O error: {exc}") from exc
 
 
 def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> None:
@@ -336,10 +342,10 @@ def _validate(data: dict[str, Any], source: str) -> None:
     for section, key in bool_keys:
         if not isinstance(data[section][key], bool):
             fail(section, key, "expected true/false")
-    # enable_thinking is tri-state: true / false / null (server default)
+    # enable_thinking is tri-state internally; omit the TOML key for the server default.
     et = data["llm"]["enable_thinking"]
     if et is not None and not isinstance(et, bool):
-        fail("llm", "enable_thinking", "expected true, false, or null")
+        fail("llm", "enable_thinking", "expected true or false; omit the key for server default")
     lang = llm["communication_language"]
     if not isinstance(lang, str) or not lang.strip():
         fail("llm", "communication_language", "expected a non-empty string")

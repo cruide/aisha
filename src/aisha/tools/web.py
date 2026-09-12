@@ -7,6 +7,7 @@ import asyncio
 import ipaddress
 import re
 import socket
+import time
 from typing import Any
 from urllib.parse import urljoin, urlparse
 
@@ -17,6 +18,8 @@ from aisha.errors import ToolPermissionError, ToolValidationError
 from aisha.tools.base import Tool, ToolContext, ToolResult
 
 MAX_REDIRECTS = 5
+MAX_CONCURRENT_FETCHES = 4
+MIN_HOST_INTERVAL = 0.2
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) aisha/0.2"
 
 
@@ -25,8 +28,17 @@ def _is_private_ip(ip: str) -> bool:
         addr = ipaddress.ip_address(ip)
     except ValueError:
         return True
-    return (addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved
-            or addr.is_multicast or addr.is_unspecified)
+    if (addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved
+            or addr.is_multicast or addr.is_unspecified):
+        return True
+    if isinstance(addr, ipaddress.IPv6Address):
+        if addr.ipv4_mapped is not None:
+            return _is_private_ip(str(addr.ipv4_mapped))
+        if addr.sixtofour is not None:
+            return _is_private_ip(str(addr.sixtofour))
+        if addr.teredo is not None:
+            return True
+    return False
 
 
 async def check_url(url: str, allow_private: bool) -> None:
@@ -68,14 +80,15 @@ class WebSearchTool(Tool):
     name = "web_search"
     read_only = True
     description = (
-        "Search the web for a focused query. Returns ranked titles, URLs and snippets; use web_fetch "
+        "Search the web for a focused query. Returns ranked titles, URLs and snippets; "
+        "use web_fetch "
         "on a promising URL when the full page content is needed."
     )
     parameters = {
         "type": "object",
         "properties": {
             "query": {"type": "string"},
-            "max_results": {"type": "integer"},
+            "max_results": {"type": "integer", "minimum": 1, "maximum": 25},
         },
         "required": ["query"],
     }
@@ -109,17 +122,32 @@ class WebFetchTool(Tool):
     name = "web_fetch"
     read_only = True
     description = (
-        "Fetch a URL and extract readable page text. Use the exact URL from search results; output may be "
+        "Fetch a URL and extract readable page text. Use the exact URL from search results; "
+        "output may be "
         "truncated, so request a relevant page or section rather than relying on the whole site."
     )
     parameters = {
         "type": "object",
         "properties": {
             "url": {"type": "string"},
-            "max_chars": {"type": "integer"},
+            "max_chars": {"type": "integer", "minimum": 1},
         },
         "required": ["url"],
     }
+
+    def __init__(self) -> None:
+        self._semaphore = asyncio.Semaphore(MAX_CONCURRENT_FETCHES)
+        self._host_locks: dict[str, asyncio.Lock] = {}
+        self._last_request: dict[str, float] = {}
+
+    async def _throttle(self, host: str) -> None:
+        """Space request starts for one hostname to avoid accidental bursts."""
+        lock = self._host_locks.setdefault(host, asyncio.Lock())
+        async with lock:
+            delay = MIN_HOST_INTERVAL - (time.monotonic() - self._last_request.get(host, 0.0))
+            if delay > 0:
+                await asyncio.sleep(delay)
+            self._last_request[host] = time.monotonic()
 
     async def run(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         cfg = ctx.config.web
@@ -130,38 +158,43 @@ class WebFetchTool(Tool):
             "User-Agent": USER_AGENT,
             "Accept": "text/html,application/xhtml+xml,text/*;q=0.9,*/*;q=0.5",
         }
-        async with httpx.AsyncClient(timeout=cfg.timeout, follow_redirects=False,
-                                     headers=headers) as client:
-            for _ in range(MAX_REDIRECTS + 1):
-                await check_url(url, cfg.allow_private_hosts)
-                try:
-                    async with client.stream("GET", url) as resp:
-                        if resp.is_redirect and resp.headers.get("location"):
-                            url = urljoin(url, resp.headers["location"])
-                            continue
-                        if resp.status_code >= 400:
-                            return ToolResult.failure(
-                                "HTTPError", f"HTTP {resp.status_code}: {url}"
-                            )
-                        body = bytearray()
-                        truncated = False
-                        async for chunk in resp.aiter_bytes():
-                            remaining = cfg.max_page_bytes - len(body)
-                            body.extend(chunk[:remaining])
-                            if len(body) >= cfg.max_page_bytes:
-                                truncated = True
-                                break
-                        ctype = resp.headers.get("content-type", "")
-                        encoding = resp.charset_encoding or "utf-8"
-                except httpx.HTTPError as exc:
-                    return ToolResult.failure("HTTPError", f"Failed to fetch {url}: {exc}")
-                break
-            else:
-                return ToolResult.failure("HTTPError", "Too many redirects")
+        async with self._semaphore:
+            async with httpx.AsyncClient(timeout=cfg.timeout, follow_redirects=False,
+                                         headers=headers) as client:
+                for _ in range(MAX_REDIRECTS + 1):
+                    await check_url(url, cfg.allow_private_hosts)
+                    host = urlparse(url).hostname
+                    if host is None:
+                        raise ToolValidationError(f"Invalid URL: {url}")
+                    await self._throttle(host.lower())
+                    try:
+                        async with client.stream("GET", url) as resp:
+                            if resp.is_redirect and resp.headers.get("location"):
+                                url = urljoin(url, resp.headers["location"])
+                                continue
+                            if resp.status_code >= 400:
+                                return ToolResult.failure(
+                                    "HTTPError", f"HTTP {resp.status_code}: {url}"
+                                )
+                            body = bytearray()
+                            truncated = False
+                            async for chunk in resp.aiter_bytes():
+                                remaining = cfg.max_page_bytes - len(body)
+                                body.extend(chunk[:remaining])
+                                if len(body) >= cfg.max_page_bytes:
+                                    truncated = True
+                                    break
+                            ctype = resp.headers.get("content-type", "")
+                            encoding = resp.charset_encoding or "utf-8"
+                    except httpx.HTTPError as exc:
+                        return ToolResult.failure("HTTPError", f"Failed to fetch {url}: {exc}")
+                    break
+                else:
+                    return ToolResult.failure("HTTPError", "Too many redirects")
 
         raw = bytes(body).decode(encoding, errors="replace")
         if "html" in ctype or raw.lstrip()[:200].lower().startswith(("<!doctype", "<html")):
-            title, text = html_to_text(raw)
+            title, text = await asyncio.to_thread(html_to_text, raw)
         else:
             title, text = "", raw
         if len(text) > max_chars:

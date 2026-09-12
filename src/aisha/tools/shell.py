@@ -46,7 +46,7 @@ DANGEROUS_PATTERNS: list[tuple[str, str]] = [
     (r"\b(invoke-expression|iex)\b", "executing an expression (Invoke-Expression)"),
     (r"\bpowershell\b[^&|\n]*-enc(odedcommand)?\b", "encoded PowerShell command"),
     (r"\bfrombase64string\b", "decoding base64 payload"),
-    (r"\bcmd(\.exe)?\s+/c\b", "nested cmd shell"),
+    (r"\bcmd(\.exe)?\s+/(c|k|r)\b", "nested cmd shell"),
     (r"\b(powershell|pwsh)\b[^&|\n]*-(c|command)\b", "nested PowerShell shell"),
 ]
 _COMPILED = [(re.compile(p, re.IGNORECASE), reason) for p, reason in DANGEROUS_PATTERNS]
@@ -168,12 +168,13 @@ async def run_process(
 
     try:
         await asyncio.wait_for(drain(), timeout=timeout)
-    except asyncio.TimeoutError:
-        await kill_tree(proc)
-        raise ToolTimeoutError(f"Command did not finish within {timeout:g} s and was stopped")
-    except asyncio.CancelledError:
-        await kill_tree(proc)
-        raise
+    except asyncio.TimeoutError as exc:
+        raise ToolTimeoutError(
+            f"Command did not finish within {timeout:g} s and was stopped"
+        ) from exc
+    finally:
+        if proc.returncode is None:
+            await kill_tree(proc)
     return proc.returncode or 0, bytes(out_buf), bytes(err_buf), bool(truncated and truncated[0])
 
 
@@ -189,7 +190,7 @@ class RunCommandTool(Tool):
             "command": {"type": "string"},
             "shell": {"type": "string", "enum": ["powershell", "cmd"]},
             "cwd": {"type": "string", "description": "Working directory, default workspace"},
-            "timeout_seconds": {"type": "integer"},
+            "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 600},
         },
         "required": ["command"],
     }

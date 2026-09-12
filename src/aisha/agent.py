@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import re
 from typing import Any, Protocol
@@ -223,9 +224,8 @@ class AgentLoop:
                 ("frequency_penalty", llm.frequency_penalty),
             ) if value is not None
         }
-        # Per-request thinking control for Qwen-style models.
-        # When enable_thinking is configured, disable thinking on tool-calling
-        # turns (mechanical work) and enable it on final-answer turns.
+        # Requests with tool schemas are mechanical and always disable thinking.
+        # The configured value applies only to a no-tools final request.
         if llm.enable_thinking is not None:
             sampling["chat_template_kwargs"] = {
                 "enable_thinking": llm.enable_thinking if tools is None else False,
@@ -479,13 +479,8 @@ class AgentLoop:
         # Trim oversized tool-results/arguments inside the keep block so that the
         # compacted history actually fits in the context window. A forced
         # (overflow-recovery) compaction also trims user messages if needed.
-        self._trim_keep_block(keep, budget_chars=keep_budget, aggressive=force)
+        keep = self._trim_keep_block(keep, budget_chars=keep_budget, aggressive=force)
         self.context.replace_history(summary, keep)
-        # Trimming mutates message dictionaries in place, so refresh the cached
-        # character count before the next compaction decision.
-        self.context._messages_chars = sum(
-            self.context._chars(message) for message in self.context.messages
-        )
         self.events.on_notice(f"History compacted: {len(old)} messages → summary.")
         return True
 
@@ -501,15 +496,17 @@ class AgentLoop:
         aggressive: bool = False,
         notify: bool = True,
     ) -> list[dict[str, Any]]:
-        """Shrink the keep block so the compacted history fits comfortably.
+        """Return a trimmed copy of the keep block that fits comfortably.
 
         ``reasoning_content`` is dropped (the model must not replay its own
         chain-of-thought). Oversized tool results and (machine-generated)
         tool-call arguments are reduced first; when ``aggressive`` is set or
         ``trim_user_messages`` is enabled, user messages are trimmed too.
         Argument replacements always stay valid JSON — an invalid string would
-        be replayed to the server on the next request.
+        be replayed to the server on the next request. The input is not mutated,
+        so a failed or cancelled compaction cannot partially alter live history.
         """
+        keep = copy.deepcopy(keep)
         cfg = self.config.compaction
         cpt = self.context.stats.chars_per_token
         if budget_chars is None:
@@ -572,9 +569,11 @@ class AgentLoop:
     async def _aggressive_compact(
         self, keep: list[dict[str, Any]], *, budget_chars: int | None = None
     ) -> bool:
-        """Reduce a single-segment history in place (no summarizer available)."""
+        """Reduce a single-segment history without using the summarizer."""
         before = sum(self.context._chars(m) for m in keep)
-        self._trim_keep_block(keep, budget_chars=budget_chars, aggressive=True, notify=False)
+        keep = self._trim_keep_block(
+            keep, budget_chars=budget_chars, aggressive=True, notify=False
+        )
         after = sum(self.context._chars(m) for m in keep)
         if after < before:
             self.context.replace_history(None, keep)
@@ -650,8 +649,9 @@ class AgentLoop:
                 "content": f"[{skipped} earlier messages omitted from the summary input]",
             })
         if sum(self.context._chars(m) for m in result) > budget_chars:
-            self._trim_keep_block(result, budget_chars=budget_chars, aggressive=True,
-                                   notify=False)
+            result = self._trim_keep_block(
+                result, budget_chars=budget_chars, aggressive=True, notify=False
+            )
         return result
 
     def _clip_segment(

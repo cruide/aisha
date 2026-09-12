@@ -131,7 +131,12 @@ def validate_args(schema: dict[str, Any], args: dict[str, Any]) -> dict[str, Any
             if not ok and isinstance(value, str):
                 stripped = value.strip()
                 if expected == "integer" and stripped.lstrip("-").isdigit():
-                    value, ok = int(stripped), True
+                    try:
+                        value, ok = int(stripped), True
+                    except ValueError as exc:
+                        raise ToolValidationError(
+                            f"argument '{key}': invalid integer"
+                        ) from exc
                 elif expected == "number":
                     try:
                         value, ok = float(stripped), True
@@ -148,6 +153,14 @@ def validate_args(schema: dict[str, Any], args: dict[str, Any]) -> dict[str, Any
         if "enum" in spec and value not in spec["enum"]:
             raise ToolValidationError(
                 f"argument '{key}': allowed values: {', '.join(map(str, spec['enum']))}"
+            )
+        if "minimum" in spec and value < spec["minimum"]:
+            raise ToolValidationError(
+                f"argument '{key}': must be at least {spec['minimum']}"
+            )
+        if "maximum" in spec and value > spec["maximum"]:
+            raise ToolValidationError(
+                f"argument '{key}': must be at most {spec['maximum']}"
             )
         clean[key] = value
     return clean
@@ -214,6 +227,10 @@ class ToolRegistry:
             except AishaError as exc:
                 result = ToolResult.failure(type(exc).__name__, str(exc))
             except Exception as exc:  # tool bugs must not kill the session
+                from aisha.logger import debug_logger
+
+                if debug_logger.path:
+                    debug_logger.log_exception(exc, tool_name=name)
                 result = ToolResult.failure(type(exc).__name__, f"{exc}")
         result.meta.setdefault("duration_ms", int((time.perf_counter() - started) * 1000))
         return result

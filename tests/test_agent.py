@@ -881,6 +881,26 @@ def test_trim_keep_block_trims_large_tool_args_as_valid_json(config, skills, wor
     args = out[0]["tool_calls"][0]["function"]["arguments"]
     assert isinstance(json.loads(args), dict)  # still valid JSON
     assert len(args) < 30_000
+    assert keep[0]["tool_calls"][0]["function"]["arguments"] == json.dumps({"content": big})
+
+
+def test_bounded_history_does_not_mutate_source(config, skills, workspace):
+    agent = make_agent(config, skills, workspace, FakeClient([]))
+    big = "z" * 30_000
+    old = [
+        {"role": "user", "content": "original task"},
+        {"role": "assistant", "tool_calls": [
+            {"id": "c1", "type": "function",
+             "function": {"name": "write_file", "arguments": json.dumps({"content": big})}},
+        ]},
+        {"role": "tool", "tool_call_id": "c1", "name": "write_file",
+         "content": json.dumps({"ok": True, "data": big})},
+    ]
+    before = json.loads(json.dumps(old))
+
+    agent._bounded_history(old, budget_chars=1000)
+
+    assert old == before
 
 
 def test_elide_args_keeps_valid_json(config, skills, workspace):

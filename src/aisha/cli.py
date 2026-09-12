@@ -200,27 +200,28 @@ async def _amain(args: argparse.Namespace) -> int:
     workspace = Path.cwd().resolve()
     no_color = args.no_color or bool(os.environ.get("NO_COLOR"))
     ui = ConsoleUI(no_color=no_color, debug=args.debug)
+    client: LlamaClient | None = None
     if args.debug:
         log_path = debug_logger.start(workspace)
         ui.info(f"Debug log: {log_path}")
 
     try:
-        config = load_config(workspace, cli=cli_overrides(args), read_only=args.read_only)
-    except ConfigurationError as exc:
-        ui.error(f"Configuration error: {exc}")
-        return 2
+        try:
+            config = load_config(workspace, cli=cli_overrides(args), read_only=args.read_only)
+        except ConfigurationError as exc:
+            ui.error(f"Configuration error: {exc}")
+            return 2
 
-    registry = build_registry(config)
-    if args.tools_only:
-        ui.print_tools(registry)
-        return 0
+        registry = build_registry(config)
+        if args.tools_only:
+            ui.print_tools(registry)
+            return 0
 
-    client = LlamaClient(config.server.base_url, config.server.model,
-                         api_key=config.server.api_key,
-                         skip_health=config.server.skip_health,
-                         connect_timeout=config.server.connect_timeout,
-                         request_timeout=config.server.request_timeout)
-    try:
+        client = LlamaClient(config.server.base_url, config.server.model,
+                             api_key=config.server.api_key,
+                             skip_health=config.server.skip_health,
+                             connect_timeout=config.server.connect_timeout,
+                             request_timeout=config.server.request_timeout)
         if args.doctor:
             return 0 if await run_doctor(config, client, ui, args.tool_call_test) else 1
         try:
@@ -267,7 +268,8 @@ async def _amain(args: argparse.Namespace) -> int:
         return 0
     finally:
         debug_logger.close()
-        await client.close()
+        if client is not None:
+            await client.close()
 
 
 def main(argv: list[str] | None = None) -> int:

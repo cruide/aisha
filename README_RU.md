@@ -1,11 +1,13 @@
 # AISHA
 
+> [English version](README.md)
+
 Локальный консольный AI-агент на Python 3.11+. Работает с внешним
 [llama-server](https://github.com/ggml-org/llama.cpp) (llama.cpp) по
 OpenAI-совместимому REST API. Это **не веб-приложение**: вся логика — цикл
 «запрос модели → вызовы инструментов → результаты → снова модель» в одном процессе.
 
-Версия: `0.2.13`.
+Версия: `0.2.14`.
 
 [![Aisha interface](aisha.jpg)](aisha.jpg)
 
@@ -28,17 +30,23 @@ OpenAI-совместимому REST API. Это **не веб-приложен�
 
 ### Вариант 1: из PyPI (рекомендуется)
 
-```bash
-pip install aisha
+```powershell
+python -m pip install aisha
 ```
 
 Самый простой способ: пакет устанавливается с https://pypi.org/project/aisha/ вместе со всеми зависимостями, команда `aisha` доступна глобально.
 
 ### Вариант 2: из исходников (репозиторий)
 
-```bash
-pip install -e ".[dev]"   # src-layout: без этого пакет `aisha` не импортируется
+```powershell
+python -m pip install .             # обычная установка
+python -m pip install -e ".[dev]"  # editable-установка для разработки
 ```
+
+Модель и chat template должны поддерживать OpenAI-style function calling. Aisha сама
+передаёт и исполняет схемы инструментов; встроенный режим llama-server `--tools all` не
+нужен и создаёт отдельный канал исполнения вне проверок Aisha. Проверить шаблон можно
+командой `aisha --doctor --tool-call-test`.
 
 Точка входа — `aisha = "aisha.cli:main"` (см. `pyproject.toml`).
 
@@ -111,7 +119,7 @@ request_timeout = 600.0
 
 [llm]
 temperature = 0.6
-top_p = 0.9                 # необязательно; None = не передавать (используется серверный умолчание)
+top_p = 0.9                 # необязательно; не указывайте ключ для серверного значения
 top_k = 40                  # необязательно; целое > 0
 repeat_penalty = 1.1        # необязательно; > 0
 frequency_penalty = 0.0     # необязательно; -2.0 .. 2.0
@@ -121,9 +129,9 @@ context_soft_limit = 0.75
 max_tool_iterations = 25
 tool_guide = false           # true — добавить «Справочник инструментов» в системный промпт (для слабых моделей)
 communication_language = "Russian"  # язык общения агента с пользователем
-enable_thinking = null          # true/false — управление thinking для Qwen-моделей;
-                                # null = серверное умолчание. При true: thinking включён для
-                                # финальных ответов и отключён для ходов с вызовом инструментов.
+# enable_thinking = true        # true/false — управление thinking для Qwen-моделей;
+                                # не указывайте ключ для серверного значения. Thinking выключен
+                                # в запросах со схемами инструментов и при саммаризации.
 compact_tool_schemas = false    # true — вырезать блоки «Example:» из описаний инструментов
 
 [tools]
@@ -155,19 +163,19 @@ index_max_chars = 20000     # лимит обрезки индекса скил�
 agents_md_max_chars = 65536 # лимит обрезки AGENTS.md и SYSTEM.md
 
 [compaction]
-summary_max_tokens = 4096   # макс. токенов на запрос саммаризации истории
-trim_user_messages = false  # обрезать также user-сообщения / аргументы tool-call'ов в keep-блоке
+summary_max_tokens = 4096   # запрошенный бюджет сводки; эффективный минимум — 256 токенов
+trim_user_messages = false  # разрешить обрезку user-сообщений в крайнем случае
 elide_large_tool_args = false  # заменять крупные применённые аргументы превью
 elide_threshold_chars = 4000
 trim_head_chars = 2000      # head при обрезке крупных результатов инструментов
 trim_tail_chars = 1000      # tail при обрезке
-trim_block_fraction = 0.25  # keep-блок должен уместиться в эту долю context_window
+trim_block_fraction = 0.25  # fallback для внутренних обрезок без явного бюджета
 
 [ui]
 theme = "dark"
 stream = true
 show_reasoning = false
-debug = false                 # true — то же, что --debug: reasoning + дампы запросов/ответов
+debug = false                 # reasoning и краткая диагностика запросов/ответов в консоли
 input_history = "~/.aisha/input_history.txt"
 ```
 
@@ -186,7 +194,7 @@ input_history = "~/.aisha/input_history.txt"
 | `AISHA_COMMUNICATION_LANGUAGE` | `llm.communication_language` |
 
 Конфиг строго валидируется: неизвестная секция или ключ вызывает ошибку.
-**Проектный `aisha.toml` ограничен в правах безопасности** — он не может ставить
+**Для проектного `aisha.toml` действуют отдельные ограничения shell и файлового доступа** — он не может ставить
 `permission = "auto"`, включать доступ за пределы workspace или включать `shell`,
 если тот отключён глобально. Это защита от «троянского» конфига в склонированном репозитории.
 
@@ -194,7 +202,7 @@ input_history = "~/.aisha/input_history.txt"
 
 | Инструмент | Read-only | Назначение |
 |---|---|---|
-| `read_file` | да | чтение файла UTF-8 с offset/limit |
+| `read_file` | да | чтение текста как UTF-8 (невалидные байты заменяются), с offset/limit |
 | `write_file` | нет | создание/перезапись (атомарно) |
 | `edit_file` | нет | точная замена фрагмента текста |
 | `list_dir` | да | содержимое каталога |
@@ -204,13 +212,19 @@ input_history = "~/.aisha/input_history.txt"
 | `web_search` | да | поиск DuckDuckGo |
 | `web_fetch` | да | загрузка веб-страницы |
 | `todowrite` | да | полная замена todo-списка сессии |
-| `ask_user` | да | уточняющий вопрос (только в REPL) |
+| `ask_user` | да | уточняющий вопрос при интерактивных stdin/stdout |
 | `memory_list` / `memory_get` | да | список/чтение блоков памяти |
 | `memory_set` / `memory_replace` | нет | запись/правка блоков памяти |
 | `skill` | да | загрузить текст скилла по имени |
 
 Файловые инструменты не выходят за пределы workspace (path-traversal блокируется),
 если не включён соответствующий `allow_*_outside_workspace`.
+Разрешение внешней записи лишь делает путь допустимым: каждая такая запись всё равно
+требует интерактивного подтверждения, поэтому в неинтерактивном режиме она отклоняется.
+Проверки путей относятся к файловым инструментам и `cwd`, но не ограничивают действия
+запущенного shell-процесса; `run_command` не работает в песочнице. `tools.permission`
+управляет только `run_command`; для отключения файловых и memory-записей используйте
+`--read-only`.
 `run_command` регистрируется только при включённом `tools.shell`, `web_search` — только
 при `tools.web_search`, memory-инструменты — только при `memory.enabled`;
 `ask_user` исключается из схем в неинтерактивном режиме.
@@ -219,14 +233,37 @@ input_history = "~/.aisha/input_history.txt"
 
 - **Память** — JSON-блоки в `~/.aisha/memory/` (глобально) и `<workspace>/.aisha/memory/`
   (проектно). Проектный блок перекрывает глобальный с тем же `label`.
+  `memory_set.scope` по умолчанию равен `global`; для памяти workspace укажите `project`.
   Вызов `memory_get` не выводится в консоль (это фоновое чтение собственной памяти агента).
 - **Скиллы** — каталоги `~/.aisha/skills/<name>/SKILL.md` и
   `<workspace>/.aisha/skills/<name>/SKILL.md` с обязательным YAML-frontmatter
-  (`name`, `description`).
+  (`name`, `description`). Поиск идёт по `name` из frontmatter; имя каталога может
+  отличаться. Неизменённое тело скилла возвращается только один раз за сессию.
 
 ## Кастомный системный промпт (SYSTEM.md)
 
-- `SYSTEM.md` — дополнительный проектный контекст, который добавляется как недоверенные данные и не заменяет встроенную политику агента. Файл ограничивается `context.agents_md_max_chars` и адаптивным лимитом для окна контекста;
+Системный промпт собирается из встроенной политики и окружения, необязательного Tool Guide,
+workspace `AGENTS.md`, `<workspace>/.aisha/SYSTEM.md`, текущих todo и, в конце, индексов
+памяти/скиллов. `AGENTS.md` и `SYSTEM.md` оформляются как недоверенные справочные данные и
+не могут переопределить встроенную политику. Оба поддерживают UTF-8 BOM и независимо
+ограничиваются настроенным и адаптивным лимитами.
+
+## Совместимость сервера
+
+Обязательны `GET /v1/models` и streaming `POST /v1/chat/completions`, включая OpenAI-style
+tool-call deltas при использовании инструментов. `/health`, `/tokenize`, `meta.n_ctx`, usage
+в stream options, `reasoning_content` и Qwen `chat_template_kwargs` необязательны и имеют
+fallback. Положительный `meta.n_ctx` заменяет оба настроенных лимита контекста; значения
+конфига используются для серверов, которые его не публикуют.
+
+Chat-запросы повторяются через 0,5, 1 и 2 секунды при ошибках соединения и HTTP
+429/502/503/504, но только до получения данных SSE. При обрыве начатого потока сохраняется
+частичный текст без повторной отправки; частичные tool-call не выполняются. При обычном
+старте явный 503 от `/health` запускает model discovery каждые четыре секунды до 120 секунд.
+`--doctor` делает один диагностический проход и не ожидает.
+
+`llm.max_output_tokens` — только верхняя граница. Каждый запрос резервирует оценку system
+prompt, истории, схем инструментов и 5% запаса, затем использует оставшийся контекст.
 
 ## REPL
 
@@ -252,13 +289,18 @@ input_history = "~/.aisha/input_history.txt"
 
 ## Безопасность
 
-- Запуск shell-команд в режиме `permission = "ask"` требует подтверждения;
-  опасные команды (`rm -rf`, `Remove-Item -Recurse`, `git reset --hard` и т.п.)
-  подтверждаются всегда.
-- `web_fetch` блокирует private/localhost/loopback-адреса (SSRF-защита), если не
-  включён `web.allow_private_hosts`.
+- Запуск shell-команд в режиме `permission = "ask"` требует подтверждения. В режиме
+  `auto` подтверждение также требуется для команд, распознанных эвристикой как опасные.
+- `web_fetch` разрешает только HTTP(S), заново проверяет каждый redirect и блокирует
+  localhost, `.local`, private, loopback, link-local, reserved, multicast, unspecified,
+  mapped IPv6, опасный 6to4 и Teredo. `allow_private_hosts=true` отключает фильтрацию
+  hostname/IP; DNS rebinding между проверкой и подключением остаётся известным ограничением.
 - `find_danger` в `shell.py` — **эвристика по regex, а не песочница**: обойти её можно.
-  Не запускайте aisha от имени пользователя с повышенными правами в недоверенном окружении.
+  Для недоверенного вывода модели используйте `permission = "ask"` или `deny` и не
+  запускайте aisha от имени пользователя с повышенными правами.
+- `--debug` записывает в `<workspace>/.aisha/logs/` промпты, историю, ответы/reasoning
+  модели, аргументы инструментов и до 4000 символов каждого результата. Логи автоматически
+  не удаляются; не включайте этот режим, если данные могут содержать секреты.
 
 ## Разработка
 

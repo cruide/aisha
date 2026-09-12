@@ -18,7 +18,8 @@ class TodoWriteTool(Tool):
     name = "todowrite"
     read_only = True
     description = (
-        "Replace the entire current task list. Use for work with at least three steps; keep one item in_progress "
+        "Replace the entire current task list. Use for work with at least three steps; "
+        "keep one item in_progress "
         "and mark completed or cancelled items explicitly."
     )
     parameters = {
@@ -131,7 +132,8 @@ class MemoryGetTool(Tool):
 class MemorySetTool(Tool):
     name = "memory_set"
     description = (
-        "Create or fully overwrite durable memory. Use global for user preferences and project for this workspace. "
+        "Create or fully overwrite durable memory. Use global for user preferences and "
+        "project for this workspace. "
         "Do not store secrets; keep the description brief and the value focused."
     )
     parameters = {
@@ -157,7 +159,8 @@ class MemorySetTool(Tool):
 class MemoryReplaceTool(Tool):
     name = "memory_replace"
     description = (
-        "Replace exact text in an existing memory block. First memory_get the current value and copy old_text "
+        "Replace exact text in an existing memory block. First memory_get the current value "
+        "and copy old_text "
         "verbatim; use a unique fragment and expected_replacements when needed."
     )
     parameters = {
@@ -166,7 +169,7 @@ class MemoryReplaceTool(Tool):
             "label": {"type": "string"},
             "old_text": {"type": "string"},
             "new_text": {"type": "string"},
-            "expected_replacements": {"type": "integer"},
+            "expected_replacements": {"type": "integer", "minimum": 1},
         },
         "required": ["label", "old_text", "new_text"],
     }
@@ -184,7 +187,8 @@ class SkillTool(Tool):
     name = "skill"
     read_only = True
     description = (
-        "Load task-specific instructions using an exact name from the skills index, not a file path. "
+        "Load task-specific instructions using an exact name from the skills index, "
+        "not a file path. "
         "Load a relevant skill before working; unchanged skills are only returned once per session."
     )
     parameters = {"type": "object", "properties": {"name": {"type": "string"}},
