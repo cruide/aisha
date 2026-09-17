@@ -33,7 +33,7 @@ from rich.text import Text
 from aisha import __version__
 from aisha.agent import AgentLoop
 from aisha.client import ChatResponse, LlamaClient, ToolCall
-from aisha.config import Config
+from aisha.config import Config, LLMConfig
 from aisha.context import ConversationContext
 from aisha.errors import AishaError, ToolCancelledError
 from aisha.tools.base import ConfirmRequest, ToolRegistry, ToolResult
@@ -56,6 +56,8 @@ PT_STYLE = Style.from_dict({
     "": "#90EE90",
     "prompt": "bold #d75fff",
     "bottom-toolbar": "noreverse bg:default #8a8a8a",
+    "bottom-toolbar.title": "noreverse bg:default #BBBBBB",
+    "bottom-toolbar.arrow": "noreverse bg:default #9BCD9B",
     "bottom-toolbar.rule": "noreverse bg:default #444444",
 })
 
@@ -63,23 +65,53 @@ PT_STYLE = Style.from_dict({
 def fmt_int(n: int) -> str:
     return f"{n:,}".replace(",", " ")
 
-
 def fmt_ctx(n: int) -> str:
-    if n >= 1_000_000:
-        value = round(n / 1_000_000, 1)
-        text = f"{value:.1f}".rstrip("0").rstrip(".")
-        return f"{text}M"
-    if n % 1024 == 0:
-        return f"{n // 1024}K"
-    return fmt_int(n)
+    if n < 1_000:
+        return fmt_int(n)
 
+    if n < 1_000_000:
+        return f"{n // 1_000}K"
+
+    return f"{n // 1_000_000}M"
 
 def fmt_short(n: int) -> str:
-    if n < 1024:
+    if n < 1_000:
         return fmt_int(n)
-    value = n / 1024
-    return f"{value:.0f}K" if n % 1024 == 0 else f"{value:.1f}K"
 
+    if n < 1_000_000:
+        value = n / 1_000
+        suffix = "K"
+    else:
+        value = n / 1_000_000
+        suffix = "M"
+
+    text = f"{value:.1f}".rstrip("0").rstrip(".")
+    return f"{text}{suffix}"
+
+def fmt_sampling(llm: LLMConfig) -> str:
+    def show(value: float | int | None) -> str:
+        return "server" if value is None else f"{value}"
+
+    return (
+        f"Temp: {show(llm.temperature)} · Top-p: {show(llm.top_p)} · "
+        f"Top-k: {show(llm.top_k)} · Repeat penalty: {show(llm.repeat_penalty)} · "
+        f"Frequency penalty: {show(llm.frequency_penalty)}"
+    )
+
+# def fmt_ctx(n: int) -> str:
+#     if n >= 1_000_000:
+#         value = round(n / 1_000_000, 1)
+#         text = f"{value:.1f}".rstrip("0").rstrip(".")
+#         return f"{text}M"
+#     if n % 1024 == 0:
+#         return f"{n // 1024}K"
+#     return fmt_int(n)
+
+# def fmt_short(n: int) -> str:
+#     if n < 1024:
+#         return fmt_int(n)
+#     value = n / 1024
+#     return f"{value:.0f}K" if n % 1024 == 0 else f"{value:.1f}K"
 
 class AishaCompleter(Completer):
     """Slash commands at line start, filesystem paths for the last word otherwise."""
@@ -171,16 +203,29 @@ class ConsoleUI:
             status = "CTX: — | Last: — | Session: —"
         else:
             pct = round(stats.ctx * 100 / self.config.llm.context_window)
-            status = (
-                f"CTX: {fmt_short(stats.ctx)} (~{pct}%)"
-                f" | Last: ↑{fmt_short(stats.last_in)} ↓{fmt_short(stats.last_out)}"
-                f" | Session: ↑{fmt_short(stats.session_in)} ↓{fmt_short(stats.session_out)}"
-                f" | Cost: ~{round(stats.cost, 2)}"
-            )
+            status = [
+                ("class:bottom-toolbar.title", f"CTX"),
+                ("class:bottom-toolbar", f": {fmt_short(stats.ctx)} (~{pct}%)"),
+                ("class:bottom-toolbar", " | "),
+                ("class:bottom-toolbar.title", "Last"),
+                ("class:bottom-toolbar", ": "),
+                ("class:bottom-toolbar.arrow", "↑"),
+                ("class:bottom-toolbar", f"{fmt_short(stats.last_in)} "),
+                ("class:bottom-toolbar.arrow", "↓"),
+                ("class:bottom-toolbar", f"{fmt_short(stats.last_out)} | "),
+                ("class:bottom-toolbar.title", f"Session"),
+                ("class:bottom-toolbar", f": "),
+                ("class:bottom-toolbar.arrow", "↑"),
+                ("class:bottom-toolbar", f"{fmt_short(stats.session_in)} "),
+                ("class:bottom-toolbar.arrow", "↓"),
+                ("class:bottom-toolbar", f"{fmt_short(stats.session_out)} | "),
+                ("class:bottom-toolbar.title", f"Cost"),
+                ("class:bottom-toolbar", f": "),
+                ("class:bottom-toolbar", f"~{round(stats.cost, 2)}"),
+            ]
             if self.config.read_only:
-                status += " | read-only"
-        return [("class:bottom-toolbar.rule", "─" * width), ("", "\n"),
-                ("class:bottom-toolbar", status)]
+                status.append(("class:bottom-toolbar", " | read-only"))
+        return [("class:bottom-toolbar.rule", "─" * width), ("", "\n")] + status
 
     # --------------------------------------------------------------- printing
     def error(self, text: str, exc: BaseException | None = None) -> None:
@@ -214,6 +259,7 @@ class ConsoleUI:
         body.append(f"{cfg.workspace}\n", style="#FF7F50")
         body.append(f"Host: {cfg.server.base_url} · {mode} · Shell: {cfg.tools.shell_type}\n",
                     style="dim")
+        body.append(f"{fmt_sampling(cfg.llm)}\n", style="dim")
         body.append(
             "/help — commands · Tab — paths · Ctrl+↑/↓ — previous inputs · "
             "Alt+Enter — newline · Ctrl+C — interrupt",
@@ -385,7 +431,7 @@ class ConsoleUI:
                                      title="reasoning", title_align="left", border_style="dim"))
         if response.content.strip():
             self.console.print(Panel(Markdown(response.content, code_theme="monokai"),
-                                     title="aisha", title_align="left", border_style="magenta"))
+                                     title="aisha", title_align="left", border_style="#3D9140"))
     def on_tool_start(self, call: ToolCall, args: dict[str, Any] | None) -> None:
         self._pending[call.id] = self._fmt_call(call.name, args)
         if not self.interactive:

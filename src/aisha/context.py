@@ -15,6 +15,12 @@ from aisha.config import Config
 from aisha.memory import MemoryStore
 from aisha.skills import SkillIndex
 
+# Import CHANGELOG_SYSTEM to append to system prompt
+CHANGELOG_SYSTEM = (
+    "After finishing working with the code, add a report on the changes (adding to the beginning) "
+    "to the file CHANGELOG.md (we list the changes in the title and points)."
+)
+
 AGENTS_MD_LIMIT = 64 * 1024
 
 
@@ -46,7 +52,8 @@ def _read_md(path: Path, limit: int = AGENTS_MD_LIMIT, rel: str | None = None) -
     name = rel if rel is not None else path.name
     marker = (
         f"\n[… {omitted} chars omitted, "
-        f'use read_file("{name}", offset={head_size}) for the rest …]\n'
+        f'use a native read_file tool call with JSON arguments '
+        f'{{"path":"{name}","offset":{head_size}}} for the rest …]\n'
     )
     return text[:head_size] + marker + text[-tail_size:], True
 
@@ -65,6 +72,10 @@ Write all source-code comments in English.
 
 ## CORE POLICY
 - Use native tool calls only; never invent results.
+- **CRITICAL**: Every tool call MUST include ALL required arguments as a JSON object.
+  The `required` array in the tool schema lists properties you MUST provide.
+  Example: if `read_file` requires `path`, you MUST send {{"path":"file.txt"}},
+  never {{}} or `null`. Check the schema before every call.
 - Read a file before changing it. Use edit_file for existing files and write_file for new ones. \
 For edit_file, copy old_text verbatim from read_file (exact indentation, no line numbers). \
 Verify changes when possible (tests/linter).
@@ -82,10 +93,15 @@ edit_file or further write_file calls.
 
 TOOL_GUIDE_INTRO = """\
 ## Tools
-Use tools **only** through native tool calling with all required JSON arguments. \
-Never invent results: wait for the tool response.
+Use tools **only** through native tool calling. The arguments must be one JSON object, \
+not prose, not a quoted string, and not an empty object when the schema lists required \
+arguments. Before sending a call, check every required property and its type. Never invent \
+results: wait for the tool response.
 
 - Use the exact tool schema and argument types. Workspace paths must be relative.
+- If a tool reports `missing required arguments`, do not repeat the same call: add the
+  named properties and call it again. For `read_file`, the minimum valid arguments are
+  `{"path":"src/main.py"}`; `offset` and `limit` are optional.
 - Before `edit_file`, always `read_file` first and copy the exact original fragment as \
   `old_text` — including indentation and blank lines, without line-number prefixes, code \
   fences or manual escaping. Include a few surrounding lines so it matches exactly once.
@@ -99,12 +115,18 @@ Never invent results: wait for the tool response.
   unchanged failed call.
 
 Common usage:
-- Find files: `glob(pattern="**/*.py")`
-- Search code: `grep(pattern="def foo", include="*.py", path="src")`
-- Replace code: `read_file` → `edit_file` with exact `old_text`
-- Run commands: `run_command(command="pytest")`
-- Web: `web_search` → `web_fetch` when needed
-- Plans: `todowrite(todos=[{text:"...",status:"in_progress"}])`
+- List one folder: call `list_dir` with `{"path":"src"}` (not recursive).
+- Find files: call `glob` with `{"pattern":"**/*.py"}` (`*.py` does not recurse).
+- Search code: call `grep` with
+  `{"pattern":"def foo","include":"*.py","path":"src"}` (Python regex).
+- Read then edit: call `read_file` with `{"path":"src/main.py"}`, copy exact `old_text`
+  from `content`, then call `edit_file` with all required JSON properties.
+- New file: call `write_file` with `{"path":"notes.txt","content":"..."}`; existing
+  file: call `edit_file` because `write_file` replaces the whole file.
+- Run commands: call `run_command` with `{"command":"pytest"}`.
+- Web: call `web_search` with `{"query":"..."}`, then `web_fetch` with
+  `{"url":"https://..."}` when needed.
+- Plans: call `todowrite` with `{"todos":[{"text":"...","status":"in_progress"}]}`.
 """
 
 def build_tool_guide(tools: list[dict[str, Any]]) -> str:
@@ -263,6 +285,8 @@ class ConversationContext:
         memory_skills = self._memory_skills_block()
         if memory_skills:
             prompt += "\n" + memory_skills
+        # Append CHANGELOG_SYSTEM at the end
+        prompt += f"\n\n{CHANGELOG_SYSTEM}"
         return prompt
 
     def _memory_skills_block(self) -> str:

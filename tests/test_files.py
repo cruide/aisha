@@ -3,6 +3,7 @@ from aisha.tools.files import (
     EditFileTool,
     GlobTool,
     GrepTool,
+    ListDirTool,
     ReadFileTool,
     WriteFileTool,
     _glob_match,
@@ -190,3 +191,36 @@ async def test_grep_skips_external_file_symlink(ctx):
         pytest.skip("symlinks not available")
     r = await GrepTool().run({"pattern": "UNIQUEMARKER42"}, ctx)
     assert r.data["matches"] == []
+
+
+def test_file_tool_descriptions_spell_out_defaults_for_weak_models():
+    read = ReadFileTool()
+    assert "0-based" in read.description
+    assert "default 300" in read.description
+    assert "no line numbers" in read.description
+    assert "0-based" in read.parameters["properties"]["offset"]["description"]
+
+    write = WriteFileTool()
+    assert "overwrite" in write.description.lower()
+    assert "edit_file" in write.description
+    assert "whole file" in write.parameters["properties"]["content"]["description"]
+
+    edit = EditFileTool()
+    assert "read_file" in edit.description
+    assert "expected_replacements" in edit.description
+    assert "no line numbers" in edit.parameters["properties"]["old_text"]["description"]
+
+    listing = ListDirTool()
+    assert "not recursive" in listing.description
+    assert "glob" in listing.description
+    assert "Directory" in listing.parameters["properties"]["path"]["description"]
+
+    glob_tool = GlobTool()
+    assert "**/*.py" in glob_tool.description
+    assert "does not recurse" in glob_tool.parameters["properties"]["pattern"]["description"]
+    assert "include_ignored" in glob_tool.description
+
+    grep = GrepTool()
+    assert "regex" in grep.description.lower()
+    assert "filename glob only" in grep.description
+    assert "not a folder path" in grep.parameters["properties"]["include"]["description"]

@@ -80,14 +80,14 @@ class WebSearchTool(Tool):
     name = "web_search"
     read_only = True
     description = (
-        "Search the web for a focused query. Returns ranked titles, URLs and snippets; "
-        "use web_fetch "
-        "on a promising URL when the full page content is needed."
+        "Web search (DuckDuckGo). REQUIRED JSON argument: query — search query as a string. "
+        "Optional: max_results (number of results). Returns titles, URLs and "
+        "snippets. Example arguments: {\"query\":\"how to set up llama.cpp\"}."
     )
     parameters = {
         "type": "object",
         "properties": {
-            "query": {"type": "string"},
+            "query": {"type": "string", "description": "REQUIRED. Search query text."},
             "max_results": {"type": "integer", "minimum": 1, "maximum": 25},
         },
         "required": ["query"],
@@ -122,14 +122,14 @@ class WebFetchTool(Tool):
     name = "web_fetch"
     read_only = True
     description = (
-        "Fetch a URL and extract readable page text. Use the exact URL from search results; "
-        "output may be "
-        "truncated, so request a relevant page or section rather than relying on the whole site."
+        "Fetch a web page by URL and return extracted text. REQUIRED JSON argument: url — "
+        "full address with http/https. Optional: max_chars (text character limit). "
+        "Example arguments: {\"url\":\"https://example.com/docs\"}."
     )
     parameters = {
         "type": "object",
         "properties": {
-            "url": {"type": "string"},
+            "url": {"type": "string", "description": "REQUIRED. Full http:// or https:// URL."},
             "max_chars": {"type": "integer", "minimum": 1},
         },
         "required": ["url"],

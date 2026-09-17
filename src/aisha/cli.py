@@ -249,8 +249,10 @@ async def _amain(args: argparse.Namespace) -> int:
             config.home_dir / "skills", config.project_dir / "skills",
             index_max_chars=config.skills.index_max_chars,
         )
-        tool_guide = (build_tool_guide(registry.schemas(read_only=config.read_only))
-                      if config.llm.tool_guide else "")
+        tool_guide = (build_tool_guide(registry.schemas(
+            read_only=config.read_only, interactive=ui.interactive,
+        ))
+                       if config.llm.tool_guide else "")
         context = ConversationContext(config, memory, skills, tool_guide)
         ui.attach(config, context, client)
         tool_ctx = ToolContext(

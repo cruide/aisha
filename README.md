@@ -7,7 +7,7 @@ A local console AI agent in Python 3.11+. Works with an external
 OpenAI-compatible REST API. This is **not a web app**: the entire logic is a loop
 of "model request → tool calls → results → model again" in a single process.
 
-Version: `0.2.14`.
+Version: `0.2.15`.
 
 [![Aisha interface](aisha.jpg)](aisha.jpg)
 
@@ -118,16 +118,16 @@ connect_timeout = 5.0
 request_timeout = 600.0
 
 [llm]
-temperature = 0.6
-top_p = 0.9                 # optional; omit the key to use the server default
-top_k = 40                  # optional; integer > 0
-repeat_penalty = 1.1        # optional; > 0
-frequency_penalty = 0.0     # optional; -2.0 .. 2.0
+temperature = 0.6           # default 0.3; 0.0 .. 2.0
+top_p = 0.9                 # default 0.9; 0.0 .. 1.0
+top_k = 40                  # default 30; integer > 0
+repeat_penalty = 1.1        # default 1.03; > 0
+frequency_penalty = 0.0     # default 0; -2.0 .. 2.0
 max_output_tokens = 32768
 context_window = 32768
 context_soft_limit = 0.75
 max_tool_iterations = 25
-tool_guide = false           # true — add "Tool Guide" to system prompt (for weak models)
+tool_guide = true            # add "Tool Guide" to system prompt; disable only to save context
 communication_language = "Russian"  # agent's response language
 # enable_thinking = true        # true/false — control Qwen-style thinking per request;
                                 # omit the key to use the server default. Thinking is disabled
@@ -230,9 +230,12 @@ spawned shell process; `run_command` is not sandboxed. `tools.permission` applie
 
 ## Memory and Skills
 
-- **Memory** — JSON blocks in `~/.aisha/memory/` (global) and `<workspace>/.aisha/memory/`
-  (project-scoped). Project block overrides global with the same `label`.
+- **Memory** — Markdown in `~/.aisha/memory/MEMORY.md` (global) and
+  `<workspace>/.aisha/memory/MEMORY.md` (project-scoped). Each block is a `## label`
+  section with optional `<!-- description: … -->` / `<!-- updated_at: … -->` comments.
+  Project block overrides global with the same `label`.
   `memory_set.scope` defaults to `global`; pass `project` for workspace-specific memory.
+  Legacy `*.json` block files are imported once at startup and then removed.
   `memory_get` call is not displayed in console (it's a background read of the agent's own memory).
 - **Skills** — directories `~/.aisha/skills/<name>/SKILL.md` and
   `<workspace>/.aisha/skills/<name>/SKILL.md` with required YAML frontmatter
@@ -265,6 +268,11 @@ four seconds for up to 120 seconds. `--doctor` performs one diagnostic pass and 
 prompt, history, tool schemas, and a 5% safety margin, then uses the remaining context.
 
 ## REPL
+
+On startup the banner shows the version, model, context window, workspace, server host,
+mode, shell, and the effective sampling parameters (`temperature`, `top_p`, `top_k`,
+`repeat_penalty`). Sampling values taken from the config are printed as-is; a value that is
+not set falls back to the server default and is shown as `server`.
 
 Commands inside interactive mode:
 

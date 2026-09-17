@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import time
 from abc import ABC, abstractmethod
@@ -107,14 +108,48 @@ _TYPES: dict[str, tuple[type, ...]] = {
 }
 
 
-def validate_args(schema: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:
+def _required_arguments_example(schema: dict[str, Any]) -> str:
+    """Return a minimal JSON object illustrating every required property."""
+    props: dict[str, Any] = schema.get("properties", {})
+    example: dict[str, Any] = {}
+    placeholders: dict[str, Any] = {
+        "string": "<string>",
+        "integer": 1,
+        "number": 1,
+        "boolean": True,
+        "array": [],
+        "object": {},
+    }
+    for key in schema.get("required", []):
+        spec = props.get(key, {})
+        example[key] = placeholders.get(spec.get("type"), "<value>")
+    return json.dumps(example, ensure_ascii=False, separators=(",", ":"))
+
+
+def validate_args(
+    schema: dict[str, Any], args: dict[str, Any], tool_name: str = ""
+) -> dict[str, Any]:
     """Validate against a minimal JSON-schema subset; unknown keys are dropped."""
     if not isinstance(args, dict):
         raise ToolValidationError("arguments must be a JSON object")
     props: dict[str, Any] = schema.get("properties", {})
     missing = [k for k in schema.get("required", []) if k not in args]
     if missing:
-        raise ToolValidationError(f"missing required arguments: {', '.join(missing)}")
+        parts = []
+        for key in missing:
+            prop = props.get(key, {})
+            desc = prop.get("description", "")
+            parts.append(f"{key} ({desc})" if desc else key)
+        example = _required_arguments_example(schema)
+        msg = (
+            f"missing required arguments: {', '.join(parts)}. "
+            f"Call {tool_name or 'this tool'} again with one JSON object containing "
+            "all required properties; do not repeat the empty or incomplete call. "
+            f"Minimum valid arguments: {example}"
+        )
+        if tool_name:
+            msg = f"{tool_name}: {msg}"
+        raise ToolValidationError(msg)
     clean: dict[str, Any] = {}
     for key, value in args.items():
         if key not in props:
@@ -175,12 +210,23 @@ class Tool(ABC):
     interactive_only: bool = False  # True => excluded from schemas in non-interactive mode
 
     def schema(self) -> dict[str, Any]:
+        """Return an OpenAI function schema with explicit required-argument cues."""
+        parameters = copy.deepcopy(self.parameters)
+        properties = parameters.get("properties", {})
+        for name in parameters.get("required", []):
+            prop = properties.get(name)
+            if not isinstance(prop, dict):
+                continue
+            description = str(prop.get("description", "")).strip()
+            if not description.upper().startswith("REQUIRED"):
+                prop["description"] = f"REQUIRED. {description}".rstrip()
+        parameters.setdefault("additionalProperties", False)
         return {
             "type": "function",
             "function": {
                 "name": self.name,
                 "description": self.description,
-                "parameters": self.parameters,
+                "parameters": parameters,
             },
         }
 
@@ -221,7 +267,7 @@ class ToolRegistry:
             try:
                 if ctx.config.read_only and not tool.read_only:
                     raise ToolPermissionError(f"Read-only mode: tool {name} is not available")
-                result = await tool.run(validate_args(tool.parameters, args), ctx)
+                result = await tool.run(validate_args(tool.parameters, args, tool.name), ctx)
             except asyncio.CancelledError:
                 raise
             except AishaError as exc:

@@ -181,13 +181,18 @@ async def run_process(
 class RunCommandTool(Tool):
     name = "run_command"
     description = (
-        "Run one non-interactive PowerShell or cmd command. Returns exit_code, stdout and stderr. "
-        "Use cwd to choose the working directory; commands may require confirmation."
+        "Run a command in PowerShell or cmd in the working directory. REQUIRED JSON argument: "
+        "command — the command as one string; never omit it and never pass an array. Optional: "
+        "shell (powershell|cmd, default from settings), cwd (working directory), "
+        "timeout_seconds. Returns stdout, stderr and "
+        "exit_code. Do not launch interactive programs (e.g. python without arguments or an "
+        "interactive editor). Example arguments: {\"command\":\"pytest\"}."
     )
     parameters = {
         "type": "object",
         "properties": {
-            "command": {"type": "string"},
+            "command": {"type": "string", "description": "REQUIRED. One shell command "
+                        "as a string, for example 'pytest tests'."},
             "shell": {"type": "string", "enum": ["powershell", "cmd"]},
             "cwd": {"type": "string", "description": "Working directory, default workspace"},
             "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 600},

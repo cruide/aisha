@@ -235,6 +235,7 @@ class LlamaClient:
             "stream": True,
             "temperature": temperature,
             "max_tokens": max_tokens,
+            "reasoning_effort": "high"
         }
         if sampling:
             payload.update(sampling)

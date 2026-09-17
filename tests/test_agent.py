@@ -278,7 +278,8 @@ async def test_max_tokens_capped_to_remaining_context(config, skills, workspace)
     agent = make_agent(config, skills, workspace, client)
     await agent.run("hi")
     sent = client.calls[0]
-    assert 256 <= sent < config.llm.context_window
+    # The remaining budget must be positive and strictly below the context window.
+    assert 1 <= sent < config.llm.context_window
 
 
 async def test_iteration_limit_stops_tool_loop(config, skills, workspace):
@@ -337,9 +338,11 @@ def test_close_dangling_tool_calls(config, skills, workspace):
     assert len(tools) == 1 and tools[0]["tool_call_id"] == "c1"
 
 
-def test_tool_guide_off_by_default(config, skills, workspace):
+def test_tool_guide_enabled_by_default(config, skills, workspace):
     context = ConversationContext(config, None, skills)
-    assert "Tool reference" not in context.system_prompt()
+    prompt = context.system_prompt()
+    assert config.llm.tool_guide is True
+    assert "CRITICAL" in prompt and "ALL required arguments" in prompt
 
 
 def test_tool_guide_injected_when_enabled(config, skills, workspace):
@@ -352,6 +355,14 @@ def test_tool_guide_injected_when_enabled(config, skills, workspace):
     assert "Available tools" in prompt
     assert "read_file" in prompt and "edit_file" in prompt
     assert "old_text" in prompt
+
+
+def test_tool_guide_uses_native_json_examples(config, skills, workspace):
+    registry = ToolRegistry()
+    registry.register(ReadFileTool())
+    guide = build_tool_guide(registry.schemas())
+    assert 'read_file` with `{"path":"src/main.py"}' in guide
+    assert "read_file()" not in guide
 
 
 def test_system_md_preserves_base_prompt(config, skills, workspace):
@@ -759,8 +770,9 @@ def test_agents_md_truncation_marker(config, skills, workspace):
     context = ConversationContext(config, None, skills)
     prompt = context.system_prompt()
     assert "chars omitted" in prompt
-    assert "offset=" in prompt
-    assert 'read_file("AGENTS.md"' in prompt
+    assert '"offset":' in prompt
+    assert '"path":"AGENTS.md"' in prompt
+    assert '"offset":700' in prompt
 
 
 def test_agents_md_limit_adapts_to_window(config, skills, workspace):

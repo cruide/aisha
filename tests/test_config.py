@@ -109,7 +109,7 @@ def test_tool_guide_flag(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
     ws = tmp_path / "ws"
     ws.mkdir()
-    assert load_config(ws, env={}).llm.tool_guide is False
+    assert load_config(ws, env={}).llm.tool_guide is True
     _write_project_config(ws, "[llm]\ntool_guide = true\n")
     assert load_config(ws, env={}).llm.tool_guide is True
 
@@ -123,15 +123,16 @@ def test_tool_guide_must_be_bool(tmp_path: Path, monkeypatch):
         load_config(ws, env={})
 
 
-def test_sampling_defaults_none(tmp_path: Path, monkeypatch):
+def test_sampling_defaults(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
     ws = tmp_path / "ws"
     ws.mkdir()
     cfg = load_config(ws, env={})
-    assert cfg.llm.top_p is None
-    assert cfg.llm.top_k is None
-    assert cfg.llm.repeat_penalty is None
-    assert cfg.llm.frequency_penalty is None
+    assert cfg.llm.temperature == 0.3
+    assert cfg.llm.top_p == 0.9
+    assert cfg.llm.top_k == 20
+    assert cfg.llm.repeat_penalty == 1.03
+    assert cfg.llm.frequency_penalty == 0
 
 
 def test_sampling_params_set(tmp_path: Path, monkeypatch):

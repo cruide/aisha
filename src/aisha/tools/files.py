@@ -353,18 +353,28 @@ class ReadFileTool(Tool):
     name = "read_file"
     read_only = True
     description = (
-        "Read a UTF-8 text file. Use offset (0-based line) and limit for a window; "
-        "the result includes the exact content, so copy edit_file.old_text from it. "
-        "If truncated or incomplete, read the needed window again."
+        "Read a UTF-8 text file. **REQUIRED**: path (string) — relative to workspace. "
+        "**NEVER call this tool with empty arguments {}**. Minimum valid call requires "
+        "path property: {\"path\":\"file.txt\"}. "
+        "Optional: offset (first line, 0-based, default 0) and limit (how many lines, "
+        "default 300, max 10000). The first line is offset=0, not 1. Result field "
+        "content is the raw file text: no line numbers. If truncated is true, the file "
+        "has more text — call again with offset = previous offset + returned. Always "
+        "read_file before edit_file and copy from content as-is. Binary files fail. "
+        "Paths outside the workspace fail unless outside-workspace reads are allowed. "
+        "Example arguments: {\"path\":\"src/main.py\",\"offset\":0,\"limit\":100}."
     )
     parameters = {
         "type": "object",
         "properties": {
-            "path": {"type": "string", "description": "File path (relative to workspace)"},
+            "path": {"type": "string",
+             "description": "REQUIRED. A file path relative to the workspace, for example "
+                            "'src/main.py'. Do not omit this property."},
             "offset": {"type": "integer", "minimum": 0,
-                       "description": "First line, 0-based"},
+                       "description": "First line to return, 0-based (default 0; "
+                                      "the first line is 0, not 1)"},
             "limit": {"type": "integer", "minimum": 1, "maximum": 10000,
-                      "description": "Max lines to return"},
+                      "description": "Max lines to return (default 300)"},
         },
         "required": ["path"],
     }
@@ -414,17 +424,43 @@ class ReadFileTool(Tool):
 class WriteFileTool(Tool):
     name = "write_file"
     description = (
-        "Create or fully overwrite a UTF-8 text file atomically; this replaces all "
-        "existing content. "
-        "Use edit_file for a small change. Parent directories are created by default."
+        "Create a new file or completely overwrite an existing file with new content. "
+        "\n\n"
+        "REQUIRED ARGUMENTS (you MUST provide both):\n"
+        "- path: relative file path (e.g., \"src/main.py\", \"config.json\")\n"
+        "- content: the complete text you want in the file, as one string\n"
+        "\n"
+        "IMPORTANT: You must ALWAYS provide the 'content' argument. Even for an empty file, "
+        "use content=\"\" (empty string). Never call write_file without content.\n"
+        "\n"
+        "WHEN TO USE:\n"
+        "- Creating a brand new file\n"
+        "- Completely rewriting an existing file from scratch\n"
+        "\n"
+        "WHEN NOT TO USE:\n"
+        "- Making a small change to an existing file → use read_file + edit_file instead\n"
+        "- The file path is a directory → this tool only works with files\n"
+        "\n"
+        "BEST PRACTICES:\n"
+        "- For files longer than ~300 lines: write a short skeleton first, then use "
+        "edit_file to add the rest in chunks\n"
+        "- Optional create_dirs argument (default true) will create missing parent folders\n"
+        "- write_file completely replaces the file — any previous content is lost\n"
+        "\n"
+        "EXAMPLES:\n"
+        "write_file(path=\"notes.txt\", content=\"Hello world\\n\")\n"
+        "write_file(path=\"data/config.json\", content=\"{}\\n\")\n"
+        "write_file(path=\"empty.txt\", content=\"\")"
     )
     parameters = {
         "type": "object",
         "properties": {
-            "path": {"type": "string"},
-            "content": {"type": "string"},
+            "path": {"type": "string",
+                     "description": "File path relative to the workspace"},
+            "content": {"type": "string",
+                        "description": "Full file contents; this replaces the whole file"},
             "create_dirs": {"type": "boolean",
-                            "description": "Create parent directories (default true)"},
+                            "description": "Create missing parent directories (default true)"},
         },
         "required": ["path", "content"],
     }
@@ -456,23 +492,32 @@ class WriteFileTool(Tool):
 class EditFileTool(Tool):
     name = "edit_file"
     description = (
-        "Replace an exact fragment in an existing text file. First read the target region and copy "
-        "old_text verbatim from the latest read_file.content: preserve spaces, indentation "
-        "and newlines; do not add line numbers or code fences. Use a unique fragment. "
-        "If not found, read again before retrying."
+        "Replace an exact text fragment in an existing file. The file must already "
+        "exist (use write_file to create it). Required: path, old_text, new_text. "
+        "Optional: expected_replacements (default 1) — old_text must appear that many "
+        "times or the file is left unchanged. Always read_file first. Copy old_text from "
+        "content exactly: same indent, same line breaks, no line numbers, no code fences. "
+        "Trailing spaces on a line and extra blank lines at the edges of old_text are "
+        "ignored; different indent is not. If not found, read_file again and copy the "
+        "current text; do not retry the same old_text. If several matches, copy more "
+        "surrounding lines so old_text is unique, or set expected_replacements. "
+        "Example arguments: {\"path\":\"src/app.py\",\"old_text\":\"return 1\","
+        "\"new_text\":\"return 2\"}."
     )
     parameters = {
         "type": "object",
         "properties": {
-            "path": {"type": "string", "description": "File path (relative to workspace)"},
+            "path": {"type": "string",
+                     "description": "File path relative to the workspace"},
             "old_text": {"type": "string",
-                         "description": "Verbatim fragment copied from read_file "
-                                        "(exact whitespace/indentation, no line numbers)"},
+                         "description": "Exact fragment copied from read_file content "
+                                        "(same indent and line breaks, no line numbers)"},
             "new_text": {"type": "string",
-                         "description": "Replacement text; keep the original indentation"},
+                         "description": "Replacement for old_text; keep the original indent"},
             "expected_replacements": {"type": "integer", "minimum": 1,
                                       "description": "Exact number of occurrences to "
-                                                     "replace (default 1)"},
+                                                     "replace (default 1); file unchanged "
+                                                     "if the count differs"},
         },
         "required": ["path", "old_text", "new_text"],
     }
@@ -522,15 +567,23 @@ class ListDirTool(Tool):
     name = "list_dir"
     read_only = True
     description = (
-        "List files and directories in a path. Use show_hidden for dotfiles and limit "
-        "to cap results."
+        "List files and folders in one directory only (not recursive). Optional: path "
+        "(default \".\"), show_hidden (default false; names starting with \".\" are "
+        "hidden), limit (default 500, max 10000). Each entry has name, type (\"dir\" or "
+        "\"file\"), and size (0 for folders). Returns first limit entries, sorted (folders "
+        "first, then files); if truncated, some entries are not shown. To find files in "
+        "subfolders, use glob. Fails if path is not a directory. "
+        "Example arguments: {\"path\":\"src\"}."
     )
     parameters = {
         "type": "object",
         "properties": {
-            "path": {"type": "string", "description": "Directory, default '.'"},
-            "show_hidden": {"type": "boolean"},
-            "limit": {"type": "integer", "minimum": 1, "maximum": 10000},
+            "path": {"type": "string",
+                     "description": "Directory to list, not recursive (default '.')"},
+            "show_hidden": {"type": "boolean",
+                            "description": "Include names starting with '.' (default false)"},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 10000,
+                      "description": "Max entries to return (default 500)"},
         },
     }
 
@@ -567,18 +620,28 @@ class GlobTool(Tool):
     name = "glob"
     read_only = True
     description = (
-        "Find file paths matching a glob pattern. Use path as the search base; patterns "
-        "support *, **, ?, and [...]. Results exclude common generated/hidden directories "
-        "unless include_ignored is true."
+        "Find files by glob pattern. Required: pattern. Optional: path (search root, "
+        "default \".\"), limit (default 200, max 10000), include_ignored (default false). "
+        "Returns file paths only, not folders; use read_file to see file contents. "
+        "Pattern is case-sensitive. \"*.py\" matches only in path itself; use \"**/*.py\" "
+        "to search all subfolders. By default skips .git, node_modules, vendor, .venv, "
+        "__pycache__, .aisha and similar; set include_ignored=true to include them. "
+        "Does not read .gitignore. If truncated, use a more specific pattern or increase "
+        "limit. Fails if path is not a directory. "
+        "Example arguments: {\"pattern\":\"src/**/*.py\"}."
     )
     parameters = {
         "type": "object",
         "properties": {
-            "pattern": {"type": "string"},
-            "path": {"type": "string", "description": "Search base, default '.'"},
-            "limit": {"type": "integer", "minimum": 1, "maximum": 10000},
+            "pattern": {"type": "string",
+                        "description": "Glob, e.g. '**/*.py'; '*.py' does not recurse"},
+            "path": {"type": "string",
+                     "description": "Directory to search from (default '.')"},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 10000,
+                      "description": "Max files to return (default 200)"},
             "include_ignored": {"type": "boolean",
-                                "description": "Do not exclude .git, node_modules, vendor, etc."},
+                                "description": "Also list files in .git, node_modules, "
+                                               "vendor, .venv, etc. (default false)"},
         },
         "required": ["pattern"],
     }
@@ -610,20 +673,39 @@ class GrepTool(Tool):
     name = "grep"
     read_only = True
     description = (
-        "Search file contents with a Python regular expression. Use include to filter "
-        "filenames and path to select a file or directory; set ignore_case when needed. "
-        "Results contain file, line and text."
+        "Search file contents with a Python regular expression, not plain text. "
+        "Required: pattern. Optional: path (file or folder, default \".\"), include "
+        "(filename glob only, default \"*\"; e.g. \"*.py\", not a folder path), "
+        "ignore_case (default false), limit (max matches, default 100), include_ignored "
+        "(default false). Returns file, line number, and the matching line; use read_file "
+        "to see full context around the match. This is regex, not a plain substring: a dot "
+        "matches any character. For plain text search, escape regex special characters "
+        "(. * + ? [ ] ( ) { } ^ $ | \\), e.g. grep(pattern=\"config\\.toml\") to find "
+        "\"config.toml\". Matches one line at a time, never across lines. Case-sensitive "
+        "unless ignore_case=true. Skips binary files and files larger than 2 MiB. Skips "
+        ".git, node_modules, vendor, .venv and similar unless include_ignored=true. "
+        "Returns empty matches list (not an error) if pattern not found. "
+        "Example arguments: {\"pattern\":\"def foo\",\"include\":\"*.py\","
+        "\"path\":\"src\"}."
     )
     parameters = {
         "type": "object",
         "properties": {
-            "pattern": {"type": "string", "description": "Regular expression (Python re)"},
-            "path": {"type": "string", "description": "File or directory, default '.'"},
-            "include": {"type": "string", "description": "File glob, e.g. '*.py'"},
-            "ignore_case": {"type": "boolean"},
+            "pattern": {"type": "string",
+                        "description": "Python regex, not plain text; a dot matches any "
+                                       "character"},
+            "path": {"type": "string",
+                     "description": "File or directory to search (default '.')"},
+            "include": {"type": "string",
+                        "description": "Filename glob only, e.g. '*.py' (default '*'; "
+                                       "not a folder path)"},
+            "ignore_case": {"type": "boolean",
+                            "description": "Case-insensitive search (default false)"},
             "limit": {"type": "integer", "minimum": 1, "maximum": 10000,
                       "description": "Max matches (default 100)"},
-            "include_ignored": {"type": "boolean"},
+            "include_ignored": {"type": "boolean",
+                                "description": "Also search .git, node_modules, vendor, "
+                                               ".venv, etc. (default false)"},
         },
         "required": ["pattern"],
     }

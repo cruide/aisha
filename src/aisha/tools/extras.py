@@ -18,20 +18,24 @@ class TodoWriteTool(Tool):
     name = "todowrite"
     read_only = True
     description = (
-        "Replace the entire current task list. Use for work with at least three steps; "
-        "keep one item in_progress "
-        "and mark completed or cancelled items explicitly."
+        "Replace the entire current task list. REQUIRED JSON argument: todos — an array of "
+        "objects; every object must contain text and status. Valid statuses: pending, "
+        "in_progress, done, cancelled. Use for work with at least three steps, keep exactly "
+        "one item in_progress while work remains, and send the complete list on every call."
     )
     parameters = {
         "type": "object",
         "properties": {
             "todos": {
                 "type": "array",
+                "description": "REQUIRED. Complete replacement list; each object needs text "
+                               "and status.",
                 "items": {
                     "type": "object",
                     "properties": {
-                        "text": {"type": "string"},
-                        "status": {"type": "string", "enum": list(TODO_STATUSES)},
+                        "text": {"type": "string", "description": "Task description."},
+                        "status": {"type": "string", "enum": list(TODO_STATUSES),
+                                   "description": "pending, in_progress, done, or cancelled."},
                     },
                     "required": ["text", "status"],
                 },
@@ -62,14 +66,17 @@ class AskUserTool(Tool):
     interactive_only = True
     description = (
         "Ask the user for a decision or missing information and wait for the answer. "
+        "REQUIRED JSON argument: question — the exact question as a string. "
         "Provide options for a choice; allow_free_text defaults to true. Interactive mode only."
     )
     parameters = {
         "type": "object",
         "properties": {
-            "question": {"type": "string"},
-            "options": {"type": "array", "items": {"type": "string"}},
-            "allow_free_text": {"type": "boolean"},
+            "question": {"type": "string", "description": "REQUIRED. Question shown to user."},
+            "options": {"type": "array", "items": {"type": "string"},
+                        "description": "Optional answer choices as strings."},
+            "allow_free_text": {"type": "boolean", "description": "Allow a custom answer "
+                                "in addition to options (default true)."},
         },
         "required": ["question"],
     }
@@ -113,8 +120,9 @@ class MemoryGetTool(Tool):
         "Read a persistent memory block by its exact label from the memory index. "
         "Returns value, description and scope; read before updating existing facts."
     )
-    parameters = {"type": "object", "properties": {"label": {"type": "string"}},
-                  "required": ["label"]}
+    parameters = {"type": "object", "properties": {
+        "label": {"type": "string", "description": "REQUIRED. Exact label from memory_list."}},
+                   "required": ["label"]}
 
     async def run(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         block = _store(ctx).get(args["label"])
@@ -139,10 +147,11 @@ class MemorySetTool(Tool):
     parameters = {
         "type": "object",
         "properties": {
-            "label": {"type": "string"},
-            "description": {"type": "string"},
-            "value": {"type": "string"},
-            "scope": {"type": "string", "enum": ["global", "project"]},
+            "label": {"type": "string", "description": "REQUIRED. Stable block identifier."},
+            "description": {"type": "string", "description": "REQUIRED. Brief index summary."},
+            "value": {"type": "string", "description": "REQUIRED. Complete block contents."},
+            "scope": {"type": "string", "enum": ["global", "project"],
+                      "description": "Storage scope (default global)."},
         },
         "required": ["label", "description", "value"],
     }
@@ -166,10 +175,12 @@ class MemoryReplaceTool(Tool):
     parameters = {
         "type": "object",
         "properties": {
-            "label": {"type": "string"},
-            "old_text": {"type": "string"},
-            "new_text": {"type": "string"},
-            "expected_replacements": {"type": "integer", "minimum": 1},
+            "label": {"type": "string", "description": "REQUIRED. Exact memory label."},
+            "old_text": {"type": "string", "description": "REQUIRED. Exact text copied from "
+                         "memory_get value."},
+            "new_text": {"type": "string", "description": "REQUIRED. Replacement text."},
+            "expected_replacements": {"type": "integer", "minimum": 1,
+                                      "description": "Exact occurrence count (default 1)."},
         },
         "required": ["label", "old_text", "new_text"],
     }
@@ -191,8 +202,10 @@ class SkillTool(Tool):
         "not a file path. "
         "Load a relevant skill before working; unchanged skills are only returned once per session."
     )
-    parameters = {"type": "object", "properties": {"name": {"type": "string"}},
-                  "required": ["name"]}
+    parameters = {"type": "object", "properties": {
+        "name": {"type": "string", "description": "REQUIRED. Exact skill name from the "
+                 "skills index, not a path."}},
+                   "required": ["name"]}
 
     async def run(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         skill = ctx.skills.get(args["name"])
