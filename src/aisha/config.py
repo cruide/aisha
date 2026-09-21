@@ -34,7 +34,7 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "max_output_tokens": 32768,
         "context_window": 32768,
         "context_soft_limit": 0.75,
-        "max_tool_iterations": 25,
+        "max_tool_iterations": 50,
         "tool_guide": True,
         "communication_language": "Russian",
         "enable_thinking": None,

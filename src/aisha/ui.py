@@ -204,7 +204,7 @@ class ConsoleUI:
         else:
             pct = round(stats.ctx * 100 / self.config.llm.context_window)
             status = [
-                ("class:bottom-toolbar.title", f"CTX"),
+                ("class:bottom-toolbar.title", "CTX"),
                 ("class:bottom-toolbar", f": {fmt_short(stats.ctx)} (~{pct}%)"),
                 ("class:bottom-toolbar", " | "),
                 ("class:bottom-toolbar.title", "Last"),
@@ -213,14 +213,14 @@ class ConsoleUI:
                 ("class:bottom-toolbar", f"{fmt_short(stats.last_in)} "),
                 ("class:bottom-toolbar.arrow", "↓"),
                 ("class:bottom-toolbar", f"{fmt_short(stats.last_out)} | "),
-                ("class:bottom-toolbar.title", f"Session"),
-                ("class:bottom-toolbar", f": "),
+                ("class:bottom-toolbar.title", "Session"),
+                ("class:bottom-toolbar", ": "),
                 ("class:bottom-toolbar.arrow", "↑"),
                 ("class:bottom-toolbar", f"{fmt_short(stats.session_in)} "),
                 ("class:bottom-toolbar.arrow", "↓"),
                 ("class:bottom-toolbar", f"{fmt_short(stats.session_out)} | "),
-                ("class:bottom-toolbar.title", f"Cost"),
-                ("class:bottom-toolbar", f": "),
+                ("class:bottom-toolbar.title", "Cost"),
+                ("class:bottom-toolbar", ": "),
                 ("class:bottom-toolbar", f"~{round(stats.cost, 2)}"),
             ]
             if self.config.read_only:
@@ -249,7 +249,7 @@ class ConsoleUI:
 
         body = Text()
 
-        body.append("AISHA ", style="bold #FFA500")
+        body.append("AIsha ", style="bold #FFA500")
         body.append(f"v{__version__}", style="#FFFFFF")
         body.append(" · MODEL: ", style="cyan")
         body.append(f"{model}", style="green")
@@ -373,7 +373,8 @@ class ConsoleUI:
         text = Text()
         for t in self.context.todos:
             text.append(f"{icons[t['status']]} {t['text']}\n", style=styles[t["status"]])
-        self.console.print(Panel(text, title="Tasks", title_align="left", border_style="blue"))
+        panel = Panel(text, title="[ Tasks ]", title_align="left", border_style="#5555FF")
+        self.console.print(panel)
 
     # ----------------------------------------------------------- agent events
     def on_stream_start(self) -> None:
@@ -401,7 +402,7 @@ class ConsoleUI:
 
     def _render_stream(self):
         elapsed = 0 if self._stream_start is None else int(time.monotonic() - self._stream_start)
-        label = "Aisha replying…" if self._tail else "Aisha thinking…"
+        label = "AIsha replying…" if self._tail else "AIsha thinking…"
         label = f"{label} {elapsed}s"
         parts: list[Any] = [Spinner("dots", text=Text(label, style="yellow3"))]
         if not self._tail and self._rtail and self._show_reasoning():
@@ -431,7 +432,7 @@ class ConsoleUI:
                                      title="reasoning", title_align="left", border_style="dim"))
         if response.content.strip():
             self.console.print(Panel(Markdown(response.content, code_theme="monokai"),
-                                     title="aisha", title_align="left", border_style="#3D9140"))
+                                     title="[ AIsha ]", title_align="left", border_style="#EEEEEE"))
     def on_tool_start(self, call: ToolCall, args: dict[str, Any] | None) -> None:
         self._pending[call.id] = self._fmt_call(call.name, args)
         if not self.interactive:

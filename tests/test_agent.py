@@ -291,7 +291,7 @@ async def test_iteration_limit_stops_tool_loop(config, skills, workspace):
     events = FakeEvents()
     agent = make_agent(config, skills, workspace, client, events)
     result = await agent.run("loop")
-    assert result == ""
+    assert "iteration limit" in result.lower()
     assert len(client.calls) == 3  # tool, tool (limit hit), no-tools refusal
     assert any("limit" in text.lower() for _, text in events.notices)
 

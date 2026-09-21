@@ -30,6 +30,11 @@ SUMMARY_SYSTEM = (
 
 SUMMARY_REQUEST = "Summarise the conversation above following the structure described."
 
+ITERATION_LIMIT_FALLBACK = (
+    "The model reached the tool-call iteration limit and did not produce a final answer. "
+    "Continue the task in a new message or increase max_tool_iterations."
+)
+
 _EXAMPLE_RE = re.compile(r"\s*Example:.*$", re.DOTALL)
 
 
@@ -182,7 +187,10 @@ class AgentLoop:
                 self._refuse_calls(
                     response.tool_calls, "Tools unavailable: iteration limit reached."
                 )
-                return response.content
+                # Some models still emit a tool call even when no tool schemas are
+                # provided. Never turn that failed finalisation attempt into an
+                # empty user-visible response.
+                return response.content or ITERATION_LIMIT_FALLBACK
             iterations += 1
             if iterations > llm.max_tool_iterations:
                 self.events.on_notice(
