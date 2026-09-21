@@ -128,7 +128,7 @@ def test_sampling_defaults(tmp_path: Path, monkeypatch):
     ws = tmp_path / "ws"
     ws.mkdir()
     cfg = load_config(ws, env={})
-    assert cfg.llm.temperature == 0.3
+    assert cfg.llm.temperature == 0.4
     assert cfg.llm.top_p == 0.9
     assert cfg.llm.top_k == 20
     assert cfg.llm.repeat_penalty == 1.03

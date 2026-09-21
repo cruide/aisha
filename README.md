@@ -56,12 +56,12 @@ llama-server \
   --n-gpu-layers 99
 ```
 
-The model and chat template must support OpenAI-style function calling. Aisha sends and
+The model and chat template must support OpenAI-style function calling. AIsha sends and
 executes its own tool schemas; llama-server's built-in `--tools all` is not required and
-would create a separate execution path outside Aisha's permission checks. Verify the
+would create a separate execution path outside AIsha's permission checks. Verify the
 template with `aisha --doctor --tool-call-test`.
 
-By default aisha expects the server at `http://localhost:8088`. Check connectivity:
+By default AIsha expects the server at `http://localhost:8088`. Check connectivity:
 
 ```bash
 aisha --doctor

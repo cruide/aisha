@@ -43,9 +43,9 @@ python -m pip install .             # обычная установка
 python -m pip install -e ".[dev]"  # editable-установка для разработки
 ```
 
-Модель и chat template должны поддерживать OpenAI-style function calling. Aisha сама
+Модель и chat template должны поддерживать OpenAI-style function calling. AIsha сама
 передаёт и исполняет схемы инструментов; встроенный режим llama-server `--tools all` не
-нужен и создаёт отдельный канал исполнения вне проверок Aisha. Проверить шаблон можно
+нужен и создаёт отдельный канал исполнения вне проверок AIsha. Проверить шаблон можно
 командой `aisha --doctor --tool-call-test`.
 
 Точка входа — `aisha = "aisha.cli:main"` (см. `pyproject.toml`).
@@ -61,7 +61,7 @@ llama-server \
   --n-gpu-layers 99
 ```
 
-По умолчанию aisha ждёт сервер на `http://localhost:8088`. Проверить подключение:
+По умолчанию AIsha ждёт сервер на `http://localhost:8088`. Проверить подключение:
 
 ```bash
 aisha --doctor
